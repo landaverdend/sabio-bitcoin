@@ -1,0 +1,5 @@
+google-adk[litellm]
+anthropic
+python-dotenv
+PyGithub
+gitpython
