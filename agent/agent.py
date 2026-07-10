@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
+from .fs_tools import list_directory, read_file, search_code
 from .github_tools import get_contributor_stats, get_issues, get_open_prs, get_pr_detail
 from .indexer import get_commits
 
@@ -19,7 +20,18 @@ root_agent = Agent(
         "and synthesize differences between implementations. "
         "The only repo currently configured is 'core' (Bitcoin Core). "
         "Use the available tools to ground your answers in real commit, PR, and issue data "
-        "rather than relying on prior knowledge."
+        "rather than relying on prior knowledge. "
+        "You can also browse the actual source tree of a repo with list_directory, read_file, "
+        "and search_code when a question needs the real implementation, not just metadata."
     ),
-    tools=[get_commits, get_open_prs, get_pr_detail, get_issues, get_contributor_stats],
+    tools=[
+        get_commits,
+        get_open_prs,
+        get_pr_detail,
+        get_issues,
+        get_contributor_stats,
+        list_directory,
+        read_file,
+        search_code,
+    ],
 )
