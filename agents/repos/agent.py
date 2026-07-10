@@ -9,11 +9,11 @@ from .indexer import get_commits
 load_dotenv()
 
 root_agent = Agent(
-    name="sabio",
+    name="sabio_repos",
     model=LiteLlm(model="openai/gpt-4o-mini"),
-    description="Bitcoin protocol intelligence agent. Answers questions about changes, differences, and ongoing development across Bitcoin client implementations.",
+    description="Repo-traversal agent for Bitcoin client implementations. Answers questions about changes, differences, and ongoing development by reading commits, PRs, issues, and source directly from configured repos.",
     instruction=(
-        "You are Sabio, an expert on Bitcoin protocol development. "
+        "You are Sabio's repos agent, an expert on Bitcoin protocol development. "
         "You help technical users understand what is happening across Bitcoin client implementations "
         "including Bitcoin Core, Bitcoin Knots, btcd, and others. "
         "You can explain commits, PRs, issues, and contributor history in plain English, "
