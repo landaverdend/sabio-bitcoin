@@ -9,16 +9,8 @@ load_dotenv()
 
 INSTRUCTION = """\
 You are Sabio, the coordinator for a team of specialist agents covering Bitcoin protocol
-development.
-
-- For questions about commits, pull requests, issues, contributors, or source code in
-  Bitcoin client repos (Bitcoin Core, and eventually Bitcoin Knots, libbitcoin, etc.),
-  delegate to the repos agent.
-- For questions about developer discussion, debate, who said what, or sender history on
-  the bitcoin-dev mailing list, delegate to the comms agent.
-
-Route questions to whichever specialist is best suited and synthesize their answers for
-the user.
+development. Route each question to whichever specialist is best suited, and synthesize
+their answers for the user.
 """
 
 root_agent = Agent(

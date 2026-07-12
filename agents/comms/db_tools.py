@@ -1,115 +1,14 @@
-"""DB-backed search tools for the comms agent.
-
-resolve() is generated from a small entity registry (the trustsell ontology
-pattern): each entity declares its table, label expression, and which columns
-get exact vs fuzzy matching, and the SQL is assembled from those declarations
-at import time. Adding a resolvable entity is a registry entry, not a new
-hand-written query.
-
-SECURITY: registry values are interpolated into SQL as identifiers/expressions.
-They are developer-defined config -- never populate them from user input. User
-input is always passed as bound params.
-"""
+"""DB-backed tools specific to comms: message content search, not identity
+resolution (see agents/shared/resolve.py for that -- it's used by other
+agents too, not comms-specific)."""
 
 import re
-from dataclasses import dataclass
 from typing import Optional
 
-from db.client import get_connection
+from agents.shared.resolve import run_query
 
-# Score tiers, highest first: an exact unique identifier (email) = 1.0; an
-# exact name/title match = _EXACT_NAME_SCORE (strong, but names collide so it
-# stays below a unique id); a fuzzy match = _FUZZY_WEIGHT * similarity() (0..1),
-# which caps below the exact tiers.
-_EXACT_NAME_SCORE = 0.9
-_FUZZY_WEIGHT = 0.6
 _MAX_RESULTS = 30
 _MAX_THREAD_MESSAGES = 50
-
-
-@dataclass(frozen=True)
-class _Entity:
-    type: str                      # agent-facing type + id prefix, e.g. "person"
-    table: str
-    label_expr: str                # SQL expression for the human label
-    id_col: str = "id"
-    exact_cols: tuple = ()         # unique identifiers (email) -> score 1.0
-    fuzzy_cols: tuple = ()         # trigram-matched cols -> exact 0.9 / fuzzy tiers
-
-
-# What resolve() can find:
-# - person: one row per reconciled identity (db/migrations/0003_people.sql) --
-#   already deduplicated across name-spelling variants, relay addresses excluded.
-# - message: found by title only. Content search is deliberately NOT a resolve
-#   branch: ts_rank scores don't compare fairly against trigram similarity, and
-#   merging them once buried a real sender match under dozens of messages that
-#   merely mentioned the queried word. That lives in search_messages() instead.
-_ENTITIES = (
-    _Entity(type="person", table="people",
-            label_expr="coalesce(display_name, '(unknown)') || ' -- ' || email",
-            exact_cols=("email",), fuzzy_cols=("display_name", "email")),
-    _Entity(type="message", table="messages",
-            label_expr="title || ' -- ' || coalesce(author, '(unknown)')",
-            fuzzy_cols=("title",)),
-)
-
-
-def _branches(entity: _Entity) -> list[str]:
-    """Generate the exact + fuzzy SELECT branches for one entity. All branches
-    emit the same (id, type, label, score) shape so they UNION cleanly.
-
-    `%%` is an escaped literal `%` (the pg_trgm operator); `%(name)s` are bound
-    params filled at execute().
-    """
-    id_expr = f"'{entity.type}:' || {entity.id_col}::text"
-    out: list[str] = []
-
-    if entity.exact_cols:
-        where = " OR ".join(f"lower({c}) = %(q)s" for c in entity.exact_cols)
-        out.append(
-            f"    SELECT {id_expr} AS id, '{entity.type}' AS type, "
-            f"{entity.label_expr} AS label, 1.0 AS score\n"
-            f"    FROM {entity.table} WHERE {where}"
-        )
-
-    if entity.fuzzy_cols:
-        exact = " OR ".join(f"lower({c}) = %(q)s" for c in entity.fuzzy_cols)
-        out.append(
-            f"    SELECT {id_expr}, '{entity.type}', {entity.label_expr}, %(exact_name_score)s\n"
-            f"    FROM {entity.table} WHERE {exact}"
-        )
-        match = " OR ".join(f"{c} %% %(raw_q)s" for c in entity.fuzzy_cols)
-        sims = ", ".join(f"similarity({c}, %(raw_q)s)" for c in entity.fuzzy_cols)
-        sim_expr = f"GREATEST({sims})" if len(entity.fuzzy_cols) > 1 else sims
-        out.append(
-            f"    SELECT {id_expr}, '{entity.type}', {entity.label_expr}, "
-            f"%(fuzzy_weight)s * {sim_expr}\n"
-            f"    FROM {entity.table} WHERE {match}"
-        )
-    return out
-
-
-def _build_resolve_sql() -> str:
-    branches = [b for e in _ENTITIES for b in _branches(e)]
-    union = "\n    UNION ALL\n".join(branches)
-    return f"""
-WITH matches AS (
-{union}
-),
-ranked AS (
-    SELECT DISTINCT ON (id) id, type, label, score
-    FROM matches
-    ORDER BY id, score DESC
-)
-SELECT id, type, label, score
-FROM ranked
-ORDER BY score DESC, label
-LIMIT %(limit)s
-"""
-
-
-# Built once at import from the registry.
-_RESOLVE_SQL = _build_resolve_sql()
 
 # Mailing-list threads keep the same core subject through "Re:"/"Fwd:" reply
 # prefixes and "[list-tag]" markers, so stripping those and substring-matching
@@ -126,48 +25,6 @@ def _normalize_subject(title: Optional[str]) -> str:
 
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _query(sql: str, params: dict) -> list[tuple]:
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
-    finally:
-        conn.close()
-
-
-def resolve(query: str, limit: int = 10) -> list[dict]:
-    """Find the person or specific message a human phrase might refer to.
-
-    Searches known people (name/email) and message titles across the local
-    bitcoin-dev mailing list archive. Returns a ranked list of candidates to
-    disambiguate between -- it does NOT fetch content. A 'person:...'
-    candidate's person_id feeds straight into search_messages; a 'message:...'
-    candidate's id feeds into get_message. Not every sender resolves to a
-    person (shared/relay addresses are excluded) -- if nothing matches a name,
-    fall back to search_messages(author=...) over the raw sender field.
-    For "find messages about X" (topic, not a specific person or message),
-    use search_messages instead.
-    """
-    q = (query or "").strip()
-    if not q:
-        return []
-    rows = _query(_RESOLVE_SQL, {
-        "q": q.lower(),
-        "raw_q": q,
-        "exact_name_score": _EXACT_NAME_SCORE,
-        "fuzzy_weight": _FUZZY_WEIGHT,
-        "limit": max(1, min(int(limit or 10), _MAX_RESULTS)),
-    })
-    candidates = []
-    for id_, type_, label, score in rows:
-        candidate = {"id": id_, "type": type_, "label": label, "score": round(float(score), 3)}
-        if type_ == "person":
-            candidate["person_id"] = int(id_.partition(":")[2])
-        candidates.append(candidate)
-    return candidates
 
 
 def search_messages(
@@ -240,7 +97,7 @@ WHERE {where}
 ORDER BY {order_sql}
 LIMIT %(limit)s
 """
-    rows = _query(sql, params)
+    rows = run_query(sql, params)
     return [
         {
             "id": f"message:{r[0]}",
@@ -259,7 +116,7 @@ LIMIT %(limit)s
 def get_message(message_id: str) -> dict:
     """Fetch full content for a message, given a 'message:<id>' id from resolve()/search_messages()."""
     pk = message_id.removeprefix("message:")
-    rows = _query(
+    rows = run_query(
         "SELECT id, author, email, title, body, url, posted_at, thread_id, person_id "
         "FROM messages WHERE id = %(pk)s",
         {"pk": pk},
@@ -287,14 +144,14 @@ def get_thread(message_id: str, limit: int = _MAX_THREAD_MESSAGES) -> list[dict]
     prefixes), since thread linkage isn't otherwise tracked.
     """
     pk = message_id.removeprefix("message:")
-    rows = _query("SELECT title FROM messages WHERE id = %(pk)s", {"pk": pk})
+    rows = run_query("SELECT title FROM messages WHERE id = %(pk)s", {"pk": pk})
     if not rows:
         raise ValueError(f"no message with id {pk}")
     core_subject = _normalize_subject(rows[0][0])
     if not core_subject:
         return []
 
-    rows = _query(
+    rows = run_query(
         "SELECT id, title, author, posted_at, left(body, 200) AS snippet "
         "FROM messages WHERE lower(title) LIKE %(pattern)s ESCAPE '\\' "
         "ORDER BY posted_at ASC LIMIT %(limit)s",

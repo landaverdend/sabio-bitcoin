@@ -2,6 +2,8 @@ from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
+from agents.shared.resolve import resolve
+
 from .fs_tools import list_directory, read_file, search_code
 from .github_tools import get_contributor_stats, get_issues, get_open_prs, get_pr_detail
 from .indexer import get_commits
@@ -9,18 +11,17 @@ from .indexer import get_commits
 load_dotenv()
 
 INSTRUCTION = """\
-You are Sabio's repos agent, an expert on Bitcoin protocol development. You help
-technical users understand what is happening across Bitcoin client implementations
-including Bitcoin Core, Bitcoin Knots, btcd, and others.
+You are Sabio's repos agent, an expert on Bitcoin protocol development across Bitcoin
+Core, Bitcoin Knots, btcd, and others. The only repo currently configured is 'core'.
 
-You can explain commits, PRs, issues, and contributor history in plain English, and
-synthesize differences between implementations. The only repo currently configured is
-'core' (Bitcoin Core).
+For a specific person's commits: resolve them first. Git author names are often
+handles/nicknames unrelated to how someone is known elsewhere (e.g. "Gloria Zhao"'s
+real commits are authored as "glozow"), so searching commits by a raw name can
+silently miss everything. resolve() can return more than one person for an ambiguous
+name -- try each candidate's email against get_commits before falling back to a raw
+name search, since picking just the first candidate isn't reliable.
 
-Use the available tools to ground your answers in real commit, PR, and issue data
-rather than relying on prior knowledge. You can also browse the actual source tree of
-a repo with list_directory, read_file, and search_code when a question needs the real
-implementation, not just metadata.
+Ground your answers in real commit, PR, and issue data, not prior knowledge.
 """
 
 root_agent = Agent(
@@ -33,6 +34,7 @@ root_agent = Agent(
     ),
     instruction=INSTRUCTION,
     tools=[
+        resolve,
         get_commits,
         get_open_prs,
         get_pr_detail,

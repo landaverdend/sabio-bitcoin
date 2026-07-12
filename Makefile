@@ -11,7 +11,7 @@ help:
 	@echo "make migrate   - apply database migrations"
 	@echo "make backfill  - download the bitcoin-dev archive and load messages + people"
 	@echo "make backend   - run the backend API (foreground)"
-	@echo "make agents    - run the ADK web UI with the root Sabio agent (foreground)"
+	@echo "make agents    - run the ADK web UI with only the root Sabio agent listed (foreground)"
 	@echo "make comms     - run the ADK web UI with repos/comms individually selectable, for testing comms directly (foreground)"
 	@echo "make dev       - start db and apply migrations"
 
@@ -29,13 +29,13 @@ migrate:
 
 backfill:
 	python3 scripts/backfill_mailing_list.py
-	python3 scripts/backfill_satoshi_emails.py
+	python3 scripts/backfill_early_archives.py
 
 backend:
 	uvicorn backend.main:app --reload
 
 agents:
-	adk web
+	adk web adk_root
 
 comms:
 	adk web agents
