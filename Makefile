@@ -29,6 +29,7 @@ migrate:
 
 backfill:
 	python3 scripts/backfill_mailing_list.py
+	python3 scripts/backfill_satoshi_emails.py
 
 backend:
 	uvicorn backend.main:app --reload
