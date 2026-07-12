@@ -3,3 +3,6 @@ anthropic
 python-dotenv
 PyGithub
 gitpython
+requests
+yoyo-migrations
+psycopg2-binary

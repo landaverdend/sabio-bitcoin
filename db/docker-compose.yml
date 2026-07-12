@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sabio-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sabio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sabio}
+      POSTGRES_DB: ${POSTGRES_DB:-sabio}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - sabio_pgdata:/var/lib/postgresql/data
+
+volumes:
+  sabio_pgdata:
