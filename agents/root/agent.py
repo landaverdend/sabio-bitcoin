@@ -2,8 +2,8 @@ from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
-from .comms.agent import root_agent as comms_agent
-from .repos.agent import root_agent as repos_agent
+from agents.comms.agent import root_agent as comms_agent
+from agents.repos.agent import root_agent as repos_agent
 
 load_dotenv()
 
@@ -14,7 +14,7 @@ their answers for the user.
 """
 
 root_agent = Agent(
-    name="sabio",
+    name="root",
     model=LiteLlm(model="openai/gpt-4o-mini"),
     description="Sabio, a Bitcoin protocol intelligence assistant that coordinates specialist agents.",
     instruction=INSTRUCTION,

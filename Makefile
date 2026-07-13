@@ -1,4 +1,4 @@
-.PHONY: help install db-up db-down migrate backfill backend agents comms dev
+.PHONY: help install db-up db-down migrate backfill backend agents dev
 
 # Silence ADK's "[EXPERIMENTAL] ..." startup warnings (they flag ADK-internal
 # features we don't configure); everything else still surfaces normally.
@@ -11,8 +11,7 @@ help:
 	@echo "make migrate   - apply database migrations"
 	@echo "make backfill  - download the bitcoin-dev archive and load messages + people"
 	@echo "make backend   - run the backend API (foreground)"
-	@echo "make agents    - run the ADK web UI with only the root Sabio agent listed (foreground)"
-	@echo "make comms     - run the ADK web UI with repos/comms individually selectable, for testing comms directly (foreground)"
+	@echo "make agents    - run the ADK web UI (foreground)"
 	@echo "make dev       - start db and apply migrations"
 
 install:
@@ -35,9 +34,6 @@ backend:
 	uvicorn backend.main:app --reload
 
 agents:
-	adk web adk_root
-
-comms:
 	adk web agents
 
 dev: db-up migrate
