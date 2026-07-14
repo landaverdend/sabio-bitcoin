@@ -33,46 +33,57 @@ class _Entity:
     table: str
     label_expr: str                # SQL expression for the human label
     id_col: str = "id"
-    exact_cols: tuple = ()         # unique identifiers (email) -> score 1.0
+    exact_cols: tuple = ()         # unique identifiers (email, bitcointalk_username) -> score 1.0
     fuzzy_cols: tuple = ()         # trigram-matched cols -> exact 0.9 / fuzzy tiers
+    extra_cols: tuple = ()         # raw columns surfaced to callers verbatim, not scored
 
 
 # What resolve() can find: one row per reconciled person identity
-# (db/migrations/0003_people.sql) -- already deduplicated across
-# name-spelling variants, relay addresses excluded. A registry of one, but
-# kept as a registry (not a hand-written query) so the three branches below
-# (exact email / exact name / fuzzy) don't duplicate the id/label expressions,
-# and so a second resolvable identity type stays a one-line addition if it's
-# ever needed.
+# (db/migrations/0003_people.sql, extended by 0006 for channels with no
+# email) -- already deduplicated across name-spelling variants, relay
+# addresses excluded. A registry of one, but kept as a registry (not a
+# hand-written query) so the three branches below (exact / exact-name /
+# fuzzy) don't duplicate the id/label expressions, and so a second resolvable
+# identity type stays a one-line addition if it's ever needed -- extra_cols
+# assumes every entity in the registry shares the same extra_cols, which is
+# fine for a registry of one but would need revisiting for a second entity.
 _ENTITIES = (
     _Entity(type="person", table="people",
-            label_expr="coalesce(display_name, '(unknown)') || ' -- ' || email",
-            exact_cols=("email",), fuzzy_cols=("display_name", "email")),
+            label_expr="coalesce(display_name, '(unknown)') || ' -- ' || "
+                        "coalesce(email, bitcointalk_username, '(no contact)')",
+            exact_cols=("email", "bitcointalk_username"),
+            fuzzy_cols=("display_name", "email", "bitcointalk_username"),
+            extra_cols=("email", "bitcointalk_username")),
 )
 
 
 def _branches(entity: _Entity) -> list[str]:
     """Generate the exact + fuzzy SELECT branches for one entity. All branches
-    emit the same (id, type, label, score) shape so they UNION cleanly.
+    emit the same (id, type, label, score, *extra_cols) shape so they UNION
+    cleanly.
 
     `%%` is an escaped literal `%` (the pg_trgm operator); `%(name)s` are bound
-    params filled at execute().
+    params filled at execute(). exact_cols/fuzzy_cols may contain NULL columns
+    per row (e.g. a forum-only person has no email) -- `lower(NULL)` and
+    `NULL %% ...` both just evaluate to NULL/false, so those rows are
+    harmlessly excluded from that branch rather than erroring.
     """
     id_expr = f"'{entity.type}:' || {entity.id_col}::text"
+    extra = "".join(f", {c}" for c in entity.extra_cols)
     out: list[str] = []
 
     if entity.exact_cols:
         where = " OR ".join(f"lower({c}) = %(q)s" for c in entity.exact_cols)
         out.append(
             f"    SELECT {id_expr} AS id, '{entity.type}' AS type, "
-            f"{entity.label_expr} AS label, 1.0 AS score\n"
+            f"{entity.label_expr} AS label, 1.0 AS score{extra}\n"
             f"    FROM {entity.table} WHERE {where}"
         )
 
     if entity.fuzzy_cols:
         exact = " OR ".join(f"lower({c}) = %(q)s" for c in entity.fuzzy_cols)
         out.append(
-            f"    SELECT {id_expr}, '{entity.type}', {entity.label_expr}, %(exact_name_score)s\n"
+            f"    SELECT {id_expr}, '{entity.type}', {entity.label_expr}, %(exact_name_score)s{extra}\n"
             f"    FROM {entity.table} WHERE {exact}"
         )
         match = " OR ".join(f"{c} %% %(raw_q)s" for c in entity.fuzzy_cols)
@@ -80,7 +91,7 @@ def _branches(entity: _Entity) -> list[str]:
         sim_expr = f"GREATEST({sims})" if len(entity.fuzzy_cols) > 1 else sims
         out.append(
             f"    SELECT {id_expr}, '{entity.type}', {entity.label_expr}, "
-            f"%(fuzzy_weight)s * {sim_expr}\n"
+            f"%(fuzzy_weight)s * {sim_expr}{extra}\n"
             f"    FROM {entity.table} WHERE {match}"
         )
     return out
@@ -89,16 +100,17 @@ def _branches(entity: _Entity) -> list[str]:
 def _build_resolve_sql() -> str:
     branches = [b for e in _ENTITIES for b in _branches(e)]
     union = "\n    UNION ALL\n".join(branches)
+    extra_select = "".join(f", {c}" for c in _ENTITIES[0].extra_cols)
     return f"""
 WITH matches AS (
 {union}
 ),
 ranked AS (
-    SELECT DISTINCT ON (id) id, type, label, score
+    SELECT DISTINCT ON (id) id, type, label, score{extra_select}
     FROM matches
     ORDER BY id, score DESC
 )
-SELECT id, type, label, score
+SELECT id, type, label, score{extra_select}
 FROM ranked
 ORDER BY score DESC, label
 LIMIT %(limit)s
@@ -120,13 +132,15 @@ def run_query(sql: str, params: dict) -> list[tuple]:
 
 
 def resolve(query: str, limit: int = 10) -> list[dict]:
-    """Find the person a human name or email might refer to.
+    """Find the person a human name, email, or BitcoinTalk username might refer to.
 
-    Searches known people (name/email) across the local bitcoin-dev mailing
-    list archive. Returns a ranked list of candidates to disambiguate between
-    -- not every sender resolves to a person (shared/relay addresses are
-    excluded). Each candidate's person_id/email feed into other tools (e.g.
-    comms' search_messages, or filtering git commits by author email).
+    Searches known people across the local bitcoin-dev mailing list archive,
+    git history, and BitcoinTalk. Returns a ranked list of candidates to
+    disambiguate between -- not every sender resolves to a person
+    (shared/relay addresses are excluded). email and bitcointalk_username are
+    each null when that candidate has no identity of that kind (e.g. a
+    forum-only poster has no email) -- check before using one to filter
+    another tool (e.g. comms' search_messages, or git commits by author email).
     """
     q = (query or "").strip()
     if not q:
@@ -139,16 +153,14 @@ def resolve(query: str, limit: int = 10) -> list[dict]:
         "limit": max(1, min(int(limit or 10), _MAX_RESULTS)),
     })
     candidates = []
-    for id_, type_, label, score in rows:
-        # label is always "{display_name} -- {email}" (see _ENTITIES above)
-        # -- rsplit so a " -- " inside a name, however unlikely, still can't
-        # shift which piece is taken as the email.
+    for id_, type_, label, score, email, bitcointalk_username in rows:
         candidates.append({
             "id": id_,
             "type": type_,
             "label": label,
             "score": round(float(score), 3),
             "person_id": int(id_.partition(":")[2]),
-            "email": label.rsplit(" -- ", 1)[-1],
+            "email": email,
+            "bitcointalk_username": bitcointalk_username,
         })
     return candidates
