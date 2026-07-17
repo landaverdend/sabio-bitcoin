@@ -66,6 +66,8 @@ FETCH_TIMEOUT = 15  # seconds -- generous next to real response times (~3s
 # tarpitting a request it doesn't like) hangs the whole crawl silently
 # instead of raising something the retry logic above can act on.
 
+_ADVISORY_LOCK_KEY = 727100600  # arbitrary; just needs to be unique to this script
+
 _TOPIC_LINK_RE = re.compile(r"topic=(\d+)\.0\b")
 _DATE_FORMAT = "%B %d, %Y, %I:%M:%S %p"
 # Edited posts append "Last edit: <date> by <user>" to the same div with no
@@ -277,10 +279,32 @@ def backfill(max_topics: int | None = None) -> dict:
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            # A second concurrent run (e.g. a Ctrl+C that didn't actually
+            # kill the first process, or just starting it twice) doesn't
+            # error -- it silently contends for locks on the same rows as
+            # the first run, which looks exactly like a hang and is what
+            # actually happened here. Fail fast instead: an advisory lock is
+            # session-scoped, so it's released automatically if this process
+            # dies, no manual cleanup needed.
+            cur.execute("SELECT pg_try_advisory_lock(%(key)s)", {"key": _ADVISORY_LOCK_KEY})
+            if not cur.fetchone()[0]:
+                raise RuntimeError(
+                    "another scrape_bitcointalk.py is already running against this database "
+                    "-- check `ps aux | grep scrape_bitcointalk` and kill it before retrying"
+                )
+
             while max_topics is None or topics_seen < max_topics:
                 topics = list_topics(page_offset=board_offset)
                 if not topics:
                     break
+                # The board is sorted by most-recent-activity, not creation
+                # time, so a resumed run re-walks the same already-ingested
+                # active topics first -- that's all-skip, zero-insert, and
+                # previously produced zero log output for long stretches,
+                # which is indistinguishable from actually being stuck. One
+                # line per page fixes that regardless of insert activity.
+                logger.info(f"board page offset={board_offset}: {len(topics)} topics "
+                            f"(so far: topics={topics_seen} inserted={inserted} skipped={skipped})")
 
                 for topic in topics:
                     if max_topics is not None and topics_seen >= max_topics:
@@ -288,6 +312,13 @@ def backfill(max_topics: int | None = None) -> dict:
                     topics_seen += 1
                     for post in all_posts_for_topic(topic["topic_id"]):
                         posts_seen += 1
+                        # A single topic can run thousands of posts long (seen
+                        # in testing) -- without this, an all-skip topic that
+                        # size produces the same "is it stuck?" silence as the
+                        # per-page heartbeat above was just added to fix.
+                        if posts_seen % 200 == 0:
+                            logger.info(f"still walking topic {topic['topic_id']} -- "
+                                        f"posts_seen={posts_seen} inserted={inserted} skipped={skipped}")
 
                         if _already_ingested(cur, post["msg_id"]):
                             skipped += 1
