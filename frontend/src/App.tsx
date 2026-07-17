@@ -3,7 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import AgentPage from "@/pages/AgentPage"
+import ChatPage from "@/pages/ChatPage"
 import CodePage from "@/pages/CodePage"
 import CommsPage from "@/pages/CommsPage"
 
@@ -25,8 +25,8 @@ function App() {
           </header>
           <main className="flex-1">
             <Routes>
-              <Route path="/" element={<Navigate to="/agent" replace />} />
-              <Route path="/agent" element={<AgentPage />} />
+              <Route path="/" element={<Navigate to="/chat" replace />} />
+              <Route path="/chat" element={<ChatPage />} />
               <Route path="/code" element={<CodePage />} />
               <Route path="/comms" element={<CommsPage />} />
             </Routes>

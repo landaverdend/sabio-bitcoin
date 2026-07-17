@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/sidebar"
 
 const items = [
-  { to: "/agent", label: "Agent", icon: Bot },
+  { to: "/chat", label: "Chat", icon: Bot },
   { to: "/code", label: "Code", icon: Code2 },
   { to: "/comms", label: "Comms", icon: MessagesSquare },
 ]
