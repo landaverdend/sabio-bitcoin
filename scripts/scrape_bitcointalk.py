@@ -46,13 +46,25 @@ POSTS_PER_PAGE = 20
 MESSAGE_BODY_CHARS = 4000  # matches the other backfill scripts' cap -- some
 # forum posts paste huge logs/code dumps (up to 18k+ chars seen in testing),
 # and get_message() hands the full body straight to an LLM tool call.
-REQUEST_DELAY = 2.0  # seconds between requests -- our own conservative choice
+REQUEST_DELAY = 2.0  # seconds between requests -- reverted from a faster 0.3s:
+# the site is Cloudflare-fronted (confirmed via curl -- 3s time-to-first-byte
+# on a single plain request), and the faster rate lines up with this scraper
+# starting to hang indefinitely (connection accepted, response withheld --
+# consistent with bot mitigation, since a non-browser client can't solve a
+# JS challenge and just waits forever). Back to the original conservative
+# value to stay under whatever threshold triggers that.
 USER_AGENT = "sabio-bitcoin-research/0.1 (+local hackathon project; contact via github)"
 COMMIT_EVERY_TOPICS = 20
 FETCH_RETRIES = 4  # a run this long (thousands of requests) will hit the odd
 # dropped connection -- retry a few times with backoff before giving up,
 # rather than killing an hours-long crawl over one transient blip.
 FETCH_RETRY_BACKOFF = 5.0  # seconds, multiplied by the attempt number
+FETCH_TIMEOUT = 15  # seconds -- generous next to real response times (~3s
+# observed directly against the site), but short enough that a stall doesn't
+# read as an indefinite hang. urlopen blocks forever with no timeout set, so
+# a stalled connection (server accepts but never responds, e.g. a WAF
+# tarpitting a request it doesn't like) hangs the whole crawl silently
+# instead of raising something the retry logic above can act on.
 
 _TOPIC_LINK_RE = re.compile(r"topic=(\d+)\.0\b")
 _DATE_FORMAT = "%B %d, %Y, %I:%M:%S %p"
@@ -99,7 +111,7 @@ def _fetch(url: str) -> BeautifulSoup:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     for attempt in range(1, FETCH_RETRIES + 1):
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
             break
         except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:

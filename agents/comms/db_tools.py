@@ -140,26 +140,36 @@ def get_message(message_id: str) -> dict:
 def get_thread(message_id: str, limit: int = _MAX_THREAD_MESSAGES) -> list[dict]:
     """Find the discussion thread a message belongs to, oldest first.
 
-    Approximate: matches by core subject line (stripping "Re:"/"[list-tag]"
-    prefixes), since thread linkage isn't otherwise tracked.
+    Uses the real thread_id when the source channel tracks one (BitcoinTalk's
+    SMF topic id -- exact) rather than approximating: only when thread_id is
+    NULL (the mailing list never populates it) does this fall back to
+    matching by core subject line (stripping "Re:"/"[list-tag]" prefixes).
     """
     pk = message_id.removeprefix("message:")
-    rows = run_query("SELECT title FROM messages WHERE id = %(pk)s", {"pk": pk})
+    rows = run_query("SELECT title, thread_id, channel FROM messages WHERE id = %(pk)s", {"pk": pk})
     if not rows:
         raise ValueError(f"no message with id {pk}")
-    core_subject = _normalize_subject(rows[0][0])
-    if not core_subject:
-        return []
+    title, thread_id, channel = rows[0]
+    lim = max(1, min(int(limit or _MAX_THREAD_MESSAGES), _MAX_THREAD_MESSAGES))
 
-    rows = run_query(
-        "SELECT id, title, author, posted_at, left(body, 200) AS snippet "
-        "FROM messages WHERE lower(title) LIKE %(pattern)s ESCAPE '\\' "
-        "ORDER BY posted_at ASC LIMIT %(limit)s",
-        {
-            "pattern": f"%{_escape_like(core_subject)}%",
-            "limit": max(1, min(int(limit or _MAX_THREAD_MESSAGES), _MAX_THREAD_MESSAGES)),
-        },
-    )
+    if thread_id is not None:
+        rows = run_query(
+            "SELECT id, title, author, posted_at, left(body, 200) AS snippet "
+            "FROM messages WHERE channel = %(channel)s AND thread_id = %(thread_id)s "
+            "ORDER BY posted_at ASC LIMIT %(limit)s",
+            {"channel": channel, "thread_id": thread_id, "limit": lim},
+        )
+    else:
+        core_subject = _normalize_subject(title)
+        if not core_subject:
+            return []
+        rows = run_query(
+            "SELECT id, title, author, posted_at, left(body, 200) AS snippet "
+            "FROM messages WHERE lower(title) LIKE %(pattern)s ESCAPE '\\' "
+            "ORDER BY posted_at ASC LIMIT %(limit)s",
+            {"pattern": f"%{_escape_like(core_subject)}%", "limit": lim},
+        )
+
     return [
         {
             "id": f"message:{r[0]}",

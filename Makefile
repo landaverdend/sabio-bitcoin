@@ -1,4 +1,4 @@
-.PHONY: help install db-up db-down migrate backfill link-github scrape-bitcointalk backend agents dev
+.PHONY: help install frontend-install db-up db-down migrate backfill link-github scrape-bitcointalk backend agents frontend dev
 
 # Silence ADK's "[EXPERIMENTAL] ..." startup warnings (they flag ADK-internal
 # features we don't configure); everything else still surfaces normally.
@@ -14,10 +14,14 @@ help:
 	@echo "make scrape-bitcointalk - print-only sample of the BitcoinTalk scraper (insert is commented out)"
 	@echo "make backend           - run the backend API (foreground)"
 	@echo "make agents            - run the ADK web UI (foreground)"
+	@echo "make frontend          - run the frontend dev server (foreground)"
 	@echo "make dev               - start db and apply migrations"
 
 install:
 	pip install -r requirements.txt
+
+frontend-install:
+	cd frontend && npm install
 
 db-up:
 	cd db && docker compose up -d
@@ -43,6 +47,9 @@ backend:
 
 agents:
 	adk web agents
+
+frontend:
+	cd frontend && npm run dev
 
 dev: db-up migrate
 	@echo "Postgres is up and migrated. Run 'make backend' and 'make agents' in separate terminals."
