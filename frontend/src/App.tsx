@@ -9,7 +9,7 @@ import CommsPage from "@/pages/CommsPage"
 
 function App() {
   useEffect(() => {
-    fetch("http://localhost:8010/ping")
+    fetch("/ping")
       .then((res) => res.json())
       .then((data) => console.log(data))
       .catch((err) => console.error(err))

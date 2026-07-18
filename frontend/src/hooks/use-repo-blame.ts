@@ -17,16 +17,17 @@ type BlameResponse = {
 
 async function fetchRepoBlame(repoName: string, ref: string, path: string): Promise<BlameResponse> {
   const params = new URLSearchParams({ repo_name: repoName, ref, path })
-  const res = await fetch(`http://localhost:8010/repo/blame?${params}`)
+  const res = await fetch(`/repo/blame?${params}`)
   if (!res.ok) {
     throw new Error(`failed to fetch blame: ${res.status}`)
   }
   return res.json()
 }
 
-/** Only fetched when enabled (i.e. blame mode is toggled on) -- unlike file
- * content, blame is real work for git to compute (~1.8s on this repo's
- * biggest file), so it's not worth fetching for every open tab up front. */
+/** enabled is passed in by the caller (currently: only when there's an
+ * active path) -- unlike file content, blame is real work for git to
+ * compute (~1.8s on this repo's biggest file), so it's not worth fetching
+ * for every open tab up front, just the one being displayed. */
 export function useRepoBlame(path: string | null, enabled: boolean, repoName = "core", ref = "HEAD") {
   return useQuery({
     queryKey: ["repo-blame", repoName, ref, path],

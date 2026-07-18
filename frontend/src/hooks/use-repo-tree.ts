@@ -13,7 +13,7 @@ type TreeResponse = {
 
 async function fetchRepoTree(repoName: string, ref: string): Promise<TreeResponse> {
   const params = new URLSearchParams({ repo_name: repoName, ref })
-  const res = await fetch(`http://localhost:8010/repo/tree?${params}`)
+  const res = await fetch(`/repo/tree?${params}`)
   if (!res.ok) {
     throw new Error(`failed to fetch repo tree: ${res.status}`)
   }

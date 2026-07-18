@@ -10,7 +10,7 @@ export type FileResponse = {
 
 async function fetchRepoFile(repoName: string, ref: string, path: string): Promise<FileResponse> {
   const params = new URLSearchParams({ repo_name: repoName, ref, path })
-  const res = await fetch(`http://localhost:8010/repo/file?${params}`)
+  const res = await fetch(`/repo/file?${params}`)
   if (!res.ok) {
     throw new Error(`failed to fetch file: ${res.status}`)
   }
