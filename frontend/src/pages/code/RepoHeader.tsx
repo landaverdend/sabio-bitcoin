@@ -17,11 +17,14 @@ export function RepoHeader() {
             <GitBranch className="size-4" />
             {data.branch}
           </span>
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          <Link
+            to={`/code/commit/${data.latest_commit.sha}`}
+            className="min-w-0 flex-1 truncate text-muted-foreground hover:text-foreground"
+          >
             <span className="text-foreground">{data.latest_commit.message}</span>
             {" · "}
             {data.latest_commit.short_sha} committed {formatRelativeDate(data.latest_commit.date)}
-          </span>
+          </Link>
           <Link
             to="/code/commits"
             className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground"

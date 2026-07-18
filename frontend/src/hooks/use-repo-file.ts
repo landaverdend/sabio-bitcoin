@@ -26,10 +26,10 @@ function repoFileQuery(path: string, repoName: string, ref: string) {
   }
 }
 
-export function useRepoFile(path: string | null, repoName = "core", ref = "HEAD") {
+export function useRepoFile(path: string | null, repoName = "core", ref = "HEAD", enabled = true) {
   return useQuery({
     ...repoFileQuery(path ?? "", repoName, ref),
-    enabled: path !== null,
+    enabled: enabled && path !== null,
   })
 }
 

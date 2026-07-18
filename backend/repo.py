@@ -187,3 +187,73 @@ def get_commits(repo_name: str = "core", ref: str = "HEAD", page: int = 1) -> di
         "total": total,
         "commits": commits,
     }
+
+
+# %B (raw full message: subject + body) instead of %s -- the commit detail
+# view shows the whole thing, GitHub-style, not just the subject line.
+_COMMIT_DETAIL_FORMAT = "%H%x00%an%x00%aI%x00%P%x00%B"
+
+_STATUS_NAMES = {"A": "added", "M": "modified", "D": "deleted"}  # R100 etc (renames) handled separately
+
+
+@router.get("/commit")
+def get_commit(sha: str, repo_name: str = "core") -> dict:
+    """Full detail for a single commit -- message, parent(s), and per-file
+    change stats -- for a GitHub-style commit detail page. Diff *content* for
+    each file is fetched separately via /repo/file at this sha and its first
+    parent, reusing that endpoint rather than duplicating file-content logic
+    here."""
+    repo = _get_repo(repo_name)
+    try:
+        raw = repo.git.show("-s", f"--format={_COMMIT_DETAIL_FORMAT}", sha)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"commit not found: {sha}") from exc
+
+    full_sha, author, date, parents_raw, message = raw.split("\x00", 4)
+    parents = parents_raw.split(" ") if parents_raw else []
+
+    files: list[dict] = []
+    if parents:
+        # Diff against the first parent -- same convention git itself uses
+        # for `<sha>^`, and what GitHub shows for merge commits (the changes
+        # the merge introduced relative to mainline, not a 3-way combination
+        # of both parents).
+        numstat = repo.git.diff("--numstat", parents[0], full_sha)
+        name_status = repo.git.diff("--name-status", "--find-renames", parents[0], full_sha)
+
+        stats_by_path = {}
+        for line in numstat.splitlines():
+            added, deleted, path = line.split("\t")
+            stats_by_path[path] = {
+                "additions": 0 if added == "-" else int(added),  # "-" = binary file
+                "deletions": 0 if deleted == "-" else int(deleted),
+            }
+
+        for line in name_status.splitlines():
+            parts = line.split("\t")
+            status_code, paths = parts[0], parts[1:]
+            path = paths[-1]  # for renames, the new path
+            status = "renamed" if status_code.startswith("R") else _STATUS_NAMES.get(status_code, "modified")
+            files.append({
+                "path": path,
+                "old_path": paths[0] if status == "renamed" else None,
+                "status": status,
+                **stats_by_path.get(path, {"additions": 0, "deletions": 0}),
+            })
+    else:
+        # Root commit (no parent) -- every file it introduced counts as added.
+        for line in repo.git.show("--format=", "--name-status", full_sha).splitlines():
+            _status, path = line.split("\t", 1)
+            files.append({"path": path, "old_path": None, "status": "added", "additions": 0, "deletions": 0})
+
+    return {
+        "repo": repo_name,
+        "sha": full_sha,
+        "short_sha": full_sha[:7],
+        "author": author,
+        "date": date,
+        "message": message.strip(),
+        "parents": parents,
+        "parent_short": parents[0][:7] if parents else None,
+        "files": files,
+    }

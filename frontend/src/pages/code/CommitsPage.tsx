@@ -67,12 +67,12 @@ export default function CommitsPage() {
                   key={commit.sha}
                   className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t" : ""}`}
                 >
-                  <div className="min-w-0 flex-1">
+                  <Link to={`/code/commit/${commit.sha}`} className="min-w-0 flex-1 hover:underline">
                     <p className="truncate text-sm font-medium">{commit.message}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground no-underline">
                       {commit.author} committed {formatRelativeDate(commit.date)}
                     </p>
-                  </div>
+                  </Link>
                   <button
                     type="button"
                     onClick={() => navigator.clipboard.writeText(commit.sha)}

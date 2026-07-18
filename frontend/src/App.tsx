@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import ChatPage from "@/pages/ChatPage"
 import CodePage from "@/pages/CodePage"
 import CommsPage from "@/pages/CommsPage"
+import CommitDetailPage from "@/pages/code/CommitDetailPage"
 import CommitsPage from "@/pages/code/CommitsPage"
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/code" element={<CodePage />} />
               <Route path="/code/commits" element={<CommitsPage />} />
+              <Route path="/code/commit/:sha" element={<CommitDetailPage />} />
               <Route path="/comms" element={<CommsPage />} />
             </Routes>
           </main>
