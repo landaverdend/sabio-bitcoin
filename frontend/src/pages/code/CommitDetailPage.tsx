@@ -2,6 +2,7 @@ import { ChevronLeft, Copy, FileDiff } from "lucide-react"
 import { useMemo } from "react"
 import { Link, useParams } from "react-router-dom"
 
+import { Markdown } from "@/components/Markdown"
 import { useRepoCommit } from "@/hooks/use-repo-commit"
 import { formatRelativeDate } from "@/lib/format-date"
 import { cn } from "@/lib/utils"
@@ -98,9 +99,9 @@ export default function CommitDetailPage() {
           <p className="text-sm text-muted-foreground">
             {commit.author} committed {formatRelativeDate(commit.date)}
           </p>
-          <pre className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-sans text-sm">
-            {commit.message}
-          </pre>
+          <div className="rounded-md border bg-muted/30 p-3">
+            <Markdown>{commit.message}</Markdown>
+          </div>
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             {commit.parents.length > 0 && (
               <span>

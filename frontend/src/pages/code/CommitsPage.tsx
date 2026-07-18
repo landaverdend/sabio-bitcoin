@@ -7,6 +7,9 @@ import { useRepoCommitPages } from "@/hooks/use-repo-commits"
 import type { CommitInfo } from "@/hooks/use-repo-summary"
 import { useRepoSummary } from "@/hooks/use-repo-summary"
 import { formatRelativeDate } from "@/lib/format-date"
+import { AuthorFilter } from "@/pages/code/AuthorFilter"
+import type { DateRange } from "@/pages/code/DateFilter"
+import { DateFilter } from "@/pages/code/DateFilter"
 
 function groupByDay(commits: CommitInfo[]): [string, CommitInfo[]][] {
   const groups = new Map<string, CommitInfo[]>()
@@ -25,8 +28,14 @@ function groupByDay(commits: CommitInfo[]): [string, CommitInfo[]][] {
 
 export default function CommitsPage() {
   const [pageCount, setPageCount] = useState(1)
+  const [author, setAuthor] = useState<string | null>(null)
+  const [dateRange, setDateRange] = useState<DateRange | null>(null)
   const { data: summary } = useRepoSummary()
-  const pages = useRepoCommitPages(pageCount)
+  const pages = useRepoCommitPages(pageCount, "core", "HEAD", {
+    author: author ?? undefined,
+    since: dateRange?.since,
+    until: dateRange?.until,
+  })
 
   const commits = useMemo(() => pages.flatMap((p) => p.data?.commits ?? []), [pages])
   const groups = useMemo(() => groupByDay(commits), [commits])
@@ -51,6 +60,20 @@ export default function CommitsPage() {
               {summary.branch}
             </span>
           )}
+          <AuthorFilter
+            selected={author}
+            onSelect={(next) => {
+              setAuthor(next)
+              setPageCount(1)
+            }}
+          />
+          <DateFilter
+            selected={dateRange}
+            onSelect={(next) => {
+              setDateRange(next)
+              setPageCount(1)
+            }}
+          />
         </div>
       </div>
 

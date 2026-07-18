@@ -162,18 +162,45 @@ def get_summary(repo_name: str = "core", ref: str = "HEAD") -> dict:
 COMMITS_PAGE_SIZE = 30  # matches GitHub's own commit-history page size
 
 
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 @router.get("/commits")
-def get_commits(repo_name: str = "core", ref: str = "HEAD", page: int = 1) -> dict:
+def get_commits(
+    repo_name: str = "core",
+    ref: str = "HEAD",
+    page: int = 1,
+    author: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict:
     """Paginated commit history for a ref, newest first -- same order as
     GitHub's own commits view. page is 1-indexed, matching how it'll be used
-    directly as a "page N of M" control."""
+    directly as a "page N of M" control. author, when given, is matched
+    exactly (re.escape'd into --author's regex) -- it's expected to come from
+    the /repo/authors list rather than free text, so a substring/regex match
+    would only risk silently returning the wrong person's commits. since/until
+    are "YYYY-MM-DD" dates forming an inclusive range -- each is expanded to
+    the start/end of that day since git's own --since/--until treat a bare
+    date as that day's midnight, which would exclude commits made *during*
+    the boundary days."""
     repo = _get_repo(repo_name)
     page = max(1, page)
     skip = (page - 1) * COMMITS_PAGE_SIZE
+    # --author matches against git's "Name <email>" header line as a whole,
+    # so the pattern must anchor through the space before "<" -- a bare
+    # "^name$" never matches anything since the email always follows.
+    filter_args = [f"--author=^{re.escape(author)} <"] if author else []
+    for label, value, suffix in (("since", since, "00:00:00"), ("until", until, "23:59:59")):
+        if value is None:
+            continue
+        if not _ISO_DATE_RE.match(value):
+            raise HTTPException(status_code=400, detail=f"invalid {label} date: {value}")
+        filter_args.append(f"--{label}={value} {suffix}")
     try:
-        total = int(repo.git.rev_list("--count", ref))
+        total = int(repo.git.rev_list("--count", *filter_args, ref))
         raw = repo.git.log(
-            f"-{COMMITS_PAGE_SIZE}", f"--skip={skip}", f"--format={_LOG_FORMAT}", ref,
+            f"-{COMMITS_PAGE_SIZE}", f"--skip={skip}", f"--format={_LOG_FORMAT}", *filter_args, ref,
         )
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"ref not found: {ref}") from exc
@@ -185,8 +212,29 @@ def get_commits(repo_name: str = "core", ref: str = "HEAD", page: int = 1) -> di
         "page": page,
         "page_size": COMMITS_PAGE_SIZE,
         "total": total,
+        "author": author,
+        "since": since,
+        "until": until,
         "commits": commits,
     }
+
+
+@router.get("/authors")
+def get_authors(repo_name: str = "core", ref: str = "HEAD") -> dict:
+    """Distinct commit authors on a ref with their commit counts, most
+    commits first -- backs the "filter by user" picker on the commits page."""
+    repo = _get_repo(repo_name)
+    try:
+        raw = repo.git.shortlog("-sn", ref)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"ref not found: {ref}") from exc
+
+    authors = []
+    for line in raw.splitlines():
+        count, name = line.strip().split("\t", 1)
+        authors.append({"name": name, "commit_count": int(count)})
+
+    return {"repo": repo_name, "ref": ref, "authors": authors}
 
 
 # %B (raw full message: subject + body) instead of %s -- the commit detail
