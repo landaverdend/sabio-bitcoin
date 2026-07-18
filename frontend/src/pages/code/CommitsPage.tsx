@@ -3,15 +3,15 @@ import { useMemo, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
-import { useRepoBranches } from "@/hooks/use-repo-branches"
-import { useRepoCommitPages } from "@/hooks/use-repo-commits"
-import type { CommitInfo } from "@/hooks/use-repo-summary"
-import { useRepoSummary } from "@/hooks/use-repo-summary"
 import { formatRelativeDate } from "@/lib/format-date"
 import { AuthorFilter } from "@/pages/code/AuthorFilter"
 import { BranchSwitcher } from "@/pages/code/BranchSwitcher"
 import type { DateRange } from "@/pages/code/DateFilter"
 import { DateFilter } from "@/pages/code/DateFilter"
+import { useRepoBranches } from "@/pages/code/hooks/use-repo-branches"
+import { useRepoCommitPages } from "@/pages/code/hooks/use-repo-commits"
+import type { CommitInfo } from "@/pages/code/hooks/use-repo-summary"
+import { useRepoSummary } from "@/pages/code/hooks/use-repo-summary"
 
 function groupByDay(commits: CommitInfo[]): [string, CommitInfo[]][] {
   const groups = new Map<string, CommitInfo[]>()

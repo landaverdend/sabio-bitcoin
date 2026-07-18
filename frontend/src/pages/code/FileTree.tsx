@@ -3,10 +3,10 @@ import { useMemo } from "react"
 import { Tree, type NodeRendererProps } from "react-arborist"
 import useMeasure from "react-use-measure"
 
-import { useRepoTree } from "@/hooks/use-repo-tree"
 import { cn } from "@/lib/utils"
 import { buildTree, type FileNode } from "@/pages/code/build-tree"
 import { getFileIcon } from "@/pages/code/file-icons"
+import { useRepoTree } from "@/pages/code/hooks/use-repo-tree"
 
 type FileTreeProps = {
   onSelectFile: (path: string) => void

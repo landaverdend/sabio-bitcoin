@@ -2,9 +2,9 @@ import { ChevronDown, Search, Users } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import type { Author } from "@/hooks/use-repo-authors"
-import { useRepoAuthors } from "@/hooks/use-repo-authors"
 import { cn } from "@/lib/utils"
+import type { Author } from "@/pages/code/hooks/use-repo-authors"
+import { useRepoAuthors } from "@/pages/code/hooks/use-repo-authors"
 
 // Deterministic color from a name, so the same author always gets the same
 // placeholder-avatar color across renders/sessions without storing anything.

@@ -1,9 +1,9 @@
 import { DiffEditor } from "@monaco-editor/react"
 
 import { useTheme } from "@/components/theme-provider"
-import type { CommitFile } from "@/hooks/use-repo-commit"
-import { useRepoFile } from "@/hooks/use-repo-file"
 import { getFileIcon } from "@/pages/code/file-icons"
+import type { CommitFile } from "@/pages/code/hooks/use-repo-commit"
+import { useRepoFile } from "@/pages/code/hooks/use-repo-file"
 import { getMonacoLanguage } from "@/pages/code/monaco-language"
 
 type DiffFileProps = {

@@ -1,4 +1,4 @@
-import type { TreeEntry } from "@/hooks/use-repo-tree"
+import type { TreeEntry } from "@/pages/code/hooks/use-repo-tree"
 
 export type FileNode = {
   id: string

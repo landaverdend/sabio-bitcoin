@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query"
-import type { CommitInfo } from "@/hooks/use-repo-summary"
+import type { CommitInfo } from "@/pages/code/hooks/use-repo-summary"
 
 type CommitsResponse = {
   repo: string

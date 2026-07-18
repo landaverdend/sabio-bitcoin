@@ -3,11 +3,11 @@ import { useMemo } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { Markdown } from "@/components/Markdown"
-import { useRepoCommit } from "@/hooks/use-repo-commit"
 import { formatRelativeDate } from "@/lib/format-date"
 import { cn } from "@/lib/utils"
 import { DiffFile } from "@/pages/code/DiffFile"
 import { getFileIcon } from "@/pages/code/file-icons"
+import { useRepoCommit } from "@/pages/code/hooks/use-repo-commit"
 
 const STATUS_COLOR: Record<string, string> = {
   added: "text-green-600 dark:text-green-400",

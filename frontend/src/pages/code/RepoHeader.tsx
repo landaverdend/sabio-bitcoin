@@ -1,11 +1,11 @@
 import { ArrowLeft, GitCommitHorizontal, History } from "lucide-react"
 import { Link } from "react-router-dom"
 
-import { useRepoBranches } from "@/hooks/use-repo-branches"
-import { useRepoCommit } from "@/hooks/use-repo-commit"
-import { useRepoSummary } from "@/hooks/use-repo-summary"
 import { formatRelativeDate } from "@/lib/format-date"
 import { BranchSwitcher } from "@/pages/code/BranchSwitcher"
+import { useRepoBranches } from "@/pages/code/hooks/use-repo-branches"
+import { useRepoCommit } from "@/pages/code/hooks/use-repo-commit"
+import { useRepoSummary } from "@/pages/code/hooks/use-repo-summary"
 
 type RepoHeaderProps = {
   browseRef: string

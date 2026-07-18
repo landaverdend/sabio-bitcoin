@@ -3,9 +3,9 @@ import { useState } from "react"
 import { Link } from "react-router-dom"
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { useRepoBranches } from "@/hooks/use-repo-branches"
 import { formatRelativeDate } from "@/lib/format-date"
 import { cn } from "@/lib/utils"
+import { useRepoBranches } from "@/pages/code/hooks/use-repo-branches"
 
 type BranchSwitcherProps = {
   current: string

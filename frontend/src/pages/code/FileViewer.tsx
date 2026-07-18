@@ -4,11 +4,11 @@ import type { editor as MonacoEditor } from "monaco-editor"
 import { useEffect, useRef, useState } from "react"
 
 import { useTheme } from "@/components/theme-provider"
-import { useRepoBlame } from "@/hooks/use-repo-blame"
-import { useRepoFiles } from "@/hooks/use-repo-file"
 import { formatRelativeDate } from "@/lib/format-date"
 import { cn } from "@/lib/utils"
 import { getFileIcon } from "@/pages/code/file-icons"
+import { useRepoBlame } from "@/pages/code/hooks/use-repo-blame"
+import { useRepoFiles } from "@/pages/code/hooks/use-repo-file"
 import { getMonacoLanguage } from "@/pages/code/monaco-language"
 
 type FileViewerProps = {
