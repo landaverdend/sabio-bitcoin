@@ -23,7 +23,7 @@ function App() {
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
             <SidebarTrigger />
           </header>
-          <main className="flex-1">
+          <main className="min-h-0 flex-1">
             <Routes>
               <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/chat" element={<ChatPage />} />
