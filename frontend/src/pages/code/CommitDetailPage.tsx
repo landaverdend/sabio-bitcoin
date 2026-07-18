@@ -1,4 +1,4 @@
-import { ChevronLeft, Copy, FileDiff } from "lucide-react"
+import { ChevronLeft, Code, Copy, FileDiff } from "lucide-react"
 import { useMemo } from "react"
 import { Link, useParams } from "react-router-dom"
 
@@ -93,9 +93,19 @@ export default function CommitDetailPage() {
             <ChevronLeft className="size-4" />
             Commits
           </Link>
-          <h1 className="text-xl font-semibold">
-            Commit <span className="font-mono">{commit.short_sha}</span>
-          </h1>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-xl font-semibold">
+              Commit <span className="font-mono">{commit.short_sha}</span>
+            </h1>
+            <Link
+              to={`/code/tree/${commit.sha}`}
+              className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Browse the repository at this point in the history"
+            >
+              <Code className="size-3.5" />
+              Browse files
+            </Link>
+          </div>
           <p className="text-sm text-muted-foreground">
             {commit.author} committed {formatRelativeDate(commit.date)}
           </p>

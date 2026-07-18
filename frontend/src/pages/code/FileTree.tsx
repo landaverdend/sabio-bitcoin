@@ -11,11 +11,12 @@ import { getFileIcon } from "@/pages/code/file-icons"
 type FileTreeProps = {
   onSelectFile: (path: string) => void
   activePath: string | null
+  browseRef: string
 }
 
-export function FileTree({ onSelectFile, activePath }: FileTreeProps) {
+export function FileTree({ onSelectFile, activePath, browseRef }: FileTreeProps) {
   const [measureRef, bounds] = useMeasure()
-  const { data, isLoading, isError } = useRepoTree()
+  const { data, isLoading, isError } = useRepoTree("core", browseRef)
 
   const tree = useMemo(() => (data ? buildTree(data.entries) : []), [data])
 

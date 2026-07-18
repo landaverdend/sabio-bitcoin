@@ -30,7 +30,12 @@ function App() {
               <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/code" element={<CodePage />} />
+              {/* Wildcard, not :ref -- refs for non-default branches only
+                  resolve as "origin/<name>", which contains a "/" and
+                  wouldn't match a single dynamic segment. */}
+              <Route path="/code/tree/*" element={<CodePage />} />
               <Route path="/code/commits" element={<CommitsPage />} />
+              <Route path="/code/commits/*" element={<CommitsPage />} />
               <Route path="/code/commit/:sha" element={<CommitDetailPage />} />
               <Route path="/comms" element={<CommsPage />} />
             </Routes>

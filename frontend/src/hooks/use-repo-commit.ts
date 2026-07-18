@@ -29,10 +29,11 @@ async function fetchRepoCommit(repoName: string, sha: string): Promise<CommitDet
   return res.json()
 }
 
-export function useRepoCommit(sha: string, repoName = "core") {
+export function useRepoCommit(sha: string, repoName = "core", enabled = true) {
   return useQuery({
     queryKey: ["repo-commit", repoName, sha],
     queryFn: () => fetchRepoCommit(repoName, sha),
+    enabled,
     staleTime: Infinity,
   })
 }

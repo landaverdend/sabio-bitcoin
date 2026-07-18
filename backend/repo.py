@@ -159,6 +159,44 @@ def get_summary(repo_name: str = "core", ref: str = "HEAD") -> dict:
     }
 
 
+@router.get("/branches")
+def get_branches(repo_name: str = "core") -> dict:
+    """All branches, most recently updated first -- backs the branch-switcher
+    dropdown. Reads refs/remotes/origin/* rather than refs/heads/: this repo
+    is mirrored via a single-branch-checked-out clone, so only "master"
+    exists as a local branch -- every other branch (29.x, 30.x, ...) is only
+    present as a remote-tracking ref. `ref` is the actual revision to pass
+    to other endpoints (e.g. "origin/29.x") since a bare branch name like
+    "29.x" doesn't resolve when there's no local branch by that name;
+    `name` is the clean display form with the "origin/" prefix stripped."""
+    repo = _get_repo(repo_name)
+    current = repo.git.rev_parse("--abbrev-ref", "HEAD")
+    # for-each-ref's --format doesn't support git-log's %x00 escape (it's
+    # inserted literally) -- tab is safe here since none of these fields
+    # (branch names, ISO dates, hex shas) can contain one.
+    raw = repo.git.for_each_ref(
+        "--sort=-committerdate",
+        "--format=%(refname:short)%09%(committerdate:iso-strict)%09%(objectname)",
+        "refs/remotes/origin/",
+    )
+    branches = []
+    for line in raw.splitlines():
+        ref, date, sha = line.split("\t")
+        if ref == "origin/HEAD":  # symbolic pointer, not a real branch
+            continue
+        name = ref.removeprefix("origin/")
+        branches.append({
+            "name": name,
+            "ref": ref,
+            "sha": sha,
+            "short_sha": sha[:7],
+            "date": date,
+            "is_default": name == current,
+        })
+
+    return {"repo": repo_name, "branches": branches}
+
+
 COMMITS_PAGE_SIZE = 30  # matches GitHub's own commit-history page size
 
 

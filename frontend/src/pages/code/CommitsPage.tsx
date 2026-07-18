@@ -1,13 +1,15 @@
-import { ChevronLeft, Copy, GitCommitHorizontal } from "lucide-react"
+import { ChevronLeft, Code, Copy, GitCommitHorizontal } from "lucide-react"
 import { useMemo, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useParams } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
+import { useRepoBranches } from "@/hooks/use-repo-branches"
 import { useRepoCommitPages } from "@/hooks/use-repo-commits"
 import type { CommitInfo } from "@/hooks/use-repo-summary"
 import { useRepoSummary } from "@/hooks/use-repo-summary"
 import { formatRelativeDate } from "@/lib/format-date"
 import { AuthorFilter } from "@/pages/code/AuthorFilter"
+import { BranchSwitcher } from "@/pages/code/BranchSwitcher"
 import type { DateRange } from "@/pages/code/DateFilter"
 import { DateFilter } from "@/pages/code/DateFilter"
 
@@ -27,11 +29,21 @@ function groupByDay(commits: CommitInfo[]): [string, CommitInfo[]][] {
 }
 
 export default function CommitsPage() {
+  // "*" (not a named param) -- same reasoning as CodePage: non-default
+  // branch refs are "origin/<name>", which contains a "/".
+  const params = useParams()
+  const browseRef = params["*"] || "HEAD"
+
   const [pageCount, setPageCount] = useState(1)
   const [author, setAuthor] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
-  const { data: summary } = useRepoSummary()
-  const pages = useRepoCommitPages(pageCount, "core", "HEAD", {
+  const { data: summary } = useRepoSummary("core", browseRef)
+  const { data: branchesData } = useRepoBranches()
+  const matchedBranch = branchesData?.branches.find((b) => b.ref === browseRef)
+  const currentBranchName = matchedBranch?.name ?? summary?.branch ?? "master"
+  const codeHref = browseRef === "HEAD" ? "/code" : `/code/tree/${browseRef}`
+
+  const pages = useRepoCommitPages(pageCount, "core", browseRef, {
     author: author ?? undefined,
     since: dateRange?.since,
     until: dateRange?.until,
@@ -47,7 +59,7 @@ export default function CommitsPage() {
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       <div className="flex shrink-0 flex-col gap-3 border-b px-6 py-4">
         <Link
-          to="/code"
+          to={codeHref}
           className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft className="size-4" />
@@ -55,11 +67,11 @@ export default function CommitsPage() {
         </Link>
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">Commits</h1>
-          {summary && (
-            <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-              {summary.branch}
-            </span>
-          )}
+          <BranchSwitcher
+            current={currentBranchName}
+            defaultHref="/code/commits"
+            branchBasePath="/code/commits"
+          />
           <AuthorFilter
             selected={author}
             onSelect={(next) => {
@@ -105,6 +117,13 @@ export default function CommitsPage() {
                     {commit.short_sha}
                     <Copy className="size-3" />
                   </button>
+                  <Link
+                    to={`/code/tree/${commit.sha}`}
+                    className="flex shrink-0 items-center rounded-md border p-1.5 text-muted-foreground hover:bg-accent"
+                    title="Browse the repository at this point in the history"
+                  >
+                    <Code className="size-3.5" />
+                  </Link>
                 </div>
               ))}
             </div>
