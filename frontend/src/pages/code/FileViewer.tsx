@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import { useTheme } from "@/components/theme-provider"
 import { useRepoBlame } from "@/hooks/use-repo-blame"
 import { useRepoFiles } from "@/hooks/use-repo-file"
+import { formatRelativeDate } from "@/lib/format-date"
 import { cn } from "@/lib/utils"
 import { getFileIcon } from "@/pages/code/file-icons"
 import { getMonacoLanguage } from "@/pages/code/monaco-language"
@@ -19,18 +20,6 @@ type FileViewerProps = {
 
 function basename(path: string): string {
   return path.split("/").pop() ?? path
-}
-
-function formatRelativeDate(iso: string | null): string {
-  if (!iso) return "unknown date"
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24))
-  if (days < 1) return "today"
-  if (days === 1) return "yesterday"
-  if (days < 30) return `${days} days ago`
-  const months = Math.floor(days / 30)
-  if (months < 12) return `${months} month${months > 1 ? "s" : ""} ago`
-  const years = Math.floor(days / 365)
-  return `${years} year${years > 1 ? "s" : ""} ago`
 }
 
 export function FileViewer({ openPaths, activePath, onSelectTab, onCloseTab }: FileViewerProps) {

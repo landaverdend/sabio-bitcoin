@@ -125,3 +125,65 @@ def get_blame(path: str, repo_name: str = "core", ref: str = "HEAD") -> dict:
         raise HTTPException(status_code=404, detail=f"file not found: {path}@{ref}") from exc
 
     return {"repo": repo_name, "ref": ref, "path": path, "lines": _parse_blame(raw)}
+
+
+# %x00 (a literal NUL) as the field delimiter in `git log --format` rather
+# than a printable character -- a commit message/author could in principle
+# contain any printable delimiter, but never a NUL (git strips those).
+_LOG_FORMAT = "%H%x00%an%x00%aI%x00%s"
+
+
+def _parse_log_line(line: str) -> dict:
+    sha, author, date, message = line.split("\x00")
+    return {"sha": sha, "short_sha": sha[:7], "author": author, "date": date, "message": message.strip()}
+
+
+@router.get("/summary")
+def get_summary(repo_name: str = "core", ref: str = "HEAD") -> dict:
+    """Branch name, latest commit, and total commit count -- for a GitHub-style
+    header bar above the file tree/viewer."""
+    repo = _get_repo(repo_name)
+    try:
+        branch = repo.git.rev_parse("--abbrev-ref", ref)
+        commit_count = int(repo.git.rev_list("--count", ref))
+        latest = _parse_log_line(repo.git.log("-1", f"--format={_LOG_FORMAT}", ref))
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"ref not found: {ref}") from exc
+
+    return {
+        "repo": repo_name,
+        "ref": ref,
+        "branch": branch,
+        "commit_count": commit_count,
+        "latest_commit": latest,
+    }
+
+
+COMMITS_PAGE_SIZE = 30  # matches GitHub's own commit-history page size
+
+
+@router.get("/commits")
+def get_commits(repo_name: str = "core", ref: str = "HEAD", page: int = 1) -> dict:
+    """Paginated commit history for a ref, newest first -- same order as
+    GitHub's own commits view. page is 1-indexed, matching how it'll be used
+    directly as a "page N of M" control."""
+    repo = _get_repo(repo_name)
+    page = max(1, page)
+    skip = (page - 1) * COMMITS_PAGE_SIZE
+    try:
+        total = int(repo.git.rev_list("--count", ref))
+        raw = repo.git.log(
+            f"-{COMMITS_PAGE_SIZE}", f"--skip={skip}", f"--format={_LOG_FORMAT}", ref,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"ref not found: {ref}") from exc
+
+    commits = [_parse_log_line(line) for line in raw.splitlines()]
+    return {
+        "repo": repo_name,
+        "ref": ref,
+        "page": page,
+        "page_size": COMMITS_PAGE_SIZE,
+        "total": total,
+        "commits": commits,
+    }

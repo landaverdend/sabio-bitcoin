@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react"
 import { FileTree } from "@/pages/code/FileTree"
 import { FileViewer } from "@/pages/code/FileViewer"
+import { RepoHeader } from "@/pages/code/RepoHeader"
 
 export default function CodePage() {
   const [openPaths, setOpenPaths] = useState<string[]>([])
@@ -27,21 +28,24 @@ export default function CodePage() {
   )
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex h-full w-64 shrink-0 flex-col border-r">
-        <div className="flex h-9 shrink-0 items-center border-b px-3 text-xs font-medium text-muted-foreground">
-          Files
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden p-1">
-          <FileTree onSelectFile={handleSelectFile} activePath={activePath} />
-        </div>
-      </aside>
-      <FileViewer
-        openPaths={openPaths}
-        activePath={activePath}
-        onSelectTab={setActivePath}
-        onCloseTab={handleCloseTab}
-      />
+    <div className="flex h-full min-h-0 flex-col">
+      <RepoHeader />
+      <div className="flex min-h-0 flex-1">
+        <aside className="flex h-full w-64 shrink-0 flex-col border-r">
+          <div className="flex h-9 shrink-0 items-center border-b px-3 text-xs font-medium text-muted-foreground">
+            Files
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden p-1">
+            <FileTree onSelectFile={handleSelectFile} activePath={activePath} />
+          </div>
+        </aside>
+        <FileViewer
+          openPaths={openPaths}
+          activePath={activePath}
+          onSelectTab={setActivePath}
+          onCloseTab={handleCloseTab}
+        />
+      </div>
     </div>
   )
 }
