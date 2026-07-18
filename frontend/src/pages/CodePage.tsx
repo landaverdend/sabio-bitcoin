@@ -1,6 +1,31 @@
+import { useCallback, useState } from "react"
 import { FileTree } from "@/pages/code/FileTree"
+import { FileViewer } from "@/pages/code/FileViewer"
 
 export default function CodePage() {
+  const [openPaths, setOpenPaths] = useState<string[]>([])
+  const [activePath, setActivePath] = useState<string | null>(null)
+
+  // Stable identity (empty deps, functional updates only) -- passed down
+  // into FileTree's virtualized row renderer, which memoizes on this to
+  // avoid remounting all ~3k rows whenever CodePage re-renders.
+  const handleSelectFile = useCallback((path: string) => {
+    setOpenPaths((prev) => (prev.includes(path) ? prev : [...prev, path]))
+    setActivePath(path)
+  }, [])
+
+  const handleCloseTab = useCallback(
+    (path: string) => {
+      const closedIndex = openPaths.indexOf(path)
+      const next = openPaths.filter((p) => p !== path)
+      setOpenPaths(next)
+      if (activePath === path) {
+        setActivePath(next[closedIndex] ?? next[closedIndex - 1] ?? null)
+      }
+    },
+    [openPaths, activePath],
+  )
+
   return (
     <div className="flex h-full min-h-0">
       <aside className="flex h-full w-64 shrink-0 flex-col border-r">
@@ -8,13 +33,15 @@ export default function CodePage() {
           Files
         </div>
         <div className="min-h-0 flex-1 overflow-hidden p-1">
-          <FileTree />
+          <FileTree onSelectFile={handleSelectFile} activePath={activePath} />
         </div>
       </aside>
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <h1 className="text-xl font-semibold">Code</h1>
-        <p className="text-muted-foreground">Select a file to view its contents.</p>
-      </div>
+      <FileViewer
+        openPaths={openPaths}
+        activePath={activePath}
+        onSelectTab={setActivePath}
+        onCloseTab={handleCloseTab}
+      />
     </div>
   )
 }
