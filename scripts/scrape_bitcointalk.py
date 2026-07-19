@@ -142,6 +142,30 @@ def list_topics(page_offset: int = 0) -> list[dict]:
     return list(seen.values())
 
 
+def walk_board_pages():
+    """Yield each board page's topics in turn, starting at offset 0, stopping
+    at the true end. SMF here never returns an empty page past the last one
+    -- confirmed empirically: a way-out-of-range offset (e.g. 300000) returns
+    the exact same topic set as the true last page, byte-for-byte, rather
+    than signaling the end any other way (this is what caused
+    discover_all_topics() to loop for hours: "stop on empty" never fired).
+    So the real stop condition is "this page's topics are identical to the
+    previous page's", not "this page is empty" -- the latter is kept too,
+    in case some other out-of-range response shape shows up."""
+    board_offset = 0
+    prev_ids = None
+    while True:
+        topics = list_topics(page_offset=board_offset)
+        if not topics:
+            break
+        ids = frozenset(t["topic_id"] for t in topics)
+        if ids == prev_ids:
+            break
+        yield topics
+        prev_ids = ids
+        board_offset += TOPICS_PER_PAGE
+
+
 def _parse_post_date(text: str) -> datetime | None:
     m = _DATE_RE.search(text)
     if m:
@@ -274,7 +298,6 @@ def backfill(max_topics: int | None = None) -> dict:
     rerun later, it picks up wherever it left off (ON CONFLICT DO NOTHING is
     a backstop for the same reason, not the primary mechanism)."""
     topics_seen = posts_seen = inserted = skipped = 0
-    board_offset = 0
 
     conn = get_connection()
     try:
@@ -293,9 +316,8 @@ def backfill(max_topics: int | None = None) -> dict:
                     "-- check `ps aux | grep scrape_bitcointalk` and kill it before retrying"
                 )
 
-            while max_topics is None or topics_seen < max_topics:
-                topics = list_topics(page_offset=board_offset)
-                if not topics:
+            for page_num, topics in enumerate(walk_board_pages()):
+                if max_topics is not None and topics_seen >= max_topics:
                     break
                 # The board is sorted by most-recent-activity, not creation
                 # time, so a resumed run re-walks the same already-ingested
@@ -303,7 +325,7 @@ def backfill(max_topics: int | None = None) -> dict:
                 # previously produced zero log output for long stretches,
                 # which is indistinguishable from actually being stuck. One
                 # line per page fixes that regardless of insert activity.
-                logger.info(f"board page offset={board_offset}: {len(topics)} topics "
+                logger.info(f"board page offset={page_num * TOPICS_PER_PAGE}: {len(topics)} topics "
                             f"(so far: topics={topics_seen} inserted={inserted} skipped={skipped})")
 
                 for topic in topics:
@@ -333,8 +355,6 @@ def backfill(max_topics: int | None = None) -> dict:
 
                     if topics_seen % COMMIT_EVERY_TOPICS == 0:
                         conn.commit()
-
-                board_offset += TOPICS_PER_PAGE
 
         conn.commit()
     finally:

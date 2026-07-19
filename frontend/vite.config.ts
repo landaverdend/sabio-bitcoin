@@ -21,6 +21,10 @@ export default defineConfig({
     proxy: {
       "/repo": "http://localhost:8010",
       "/ping": "http://localhost:8010",
+      // Scoped to /chat/stream, not a bare "/chat" -- that's also the
+      // frontend's own client-side route for the chat page, and a broad
+      // proxy rule would intercept it before Vite/React Router ever see it.
+      "/chat/stream": "http://localhost:8010",
     },
   },
 })

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.chat import router as chat_router
 from backend.repo import router as repo_router
 
 app = FastAPI(title="Sabio Backend")
@@ -13,6 +14,7 @@ app.add_middleware(
 )
 
 app.include_router(repo_router)
+app.include_router(chat_router)
 
 
 @app.get("/ping")

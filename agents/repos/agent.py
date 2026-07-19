@@ -4,7 +4,7 @@ from google.adk.models.lite_llm import LiteLlm
 
 from agents.shared.resolve import resolve
 
-from .fs_tools import list_directory, read_file, search_code
+from .git_tools import list_directory, read_file, search_code
 from .github_tools import get_contributor_stats, get_issues, get_open_prs, get_pr_detail
 from .indexer import get_commits
 

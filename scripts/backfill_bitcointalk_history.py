@@ -41,7 +41,7 @@ from scrape_bitcointalk import (  # noqa: E402
     _INSERT_SQL,
     _post_to_row,
     all_posts_for_topic,
-    list_topics,
+    walk_board_pages,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -50,27 +50,16 @@ logger = logging.getLogger("backfill_bitcointalk_history")
 
 def discover_all_topics() -> list[dict]:
     """Walk every board index page and collect every topic, regardless of
-    the board's own (recency) sort order."""
+    the board's own (recency) sort order. Delegates the actual page-walking
+    and end-of-board detection to walk_board_pages() -- see its docstring:
+    SMF here never returns an empty page past the last one, it clamps to
+    the last valid page instead, so "stop on empty" alone doesn't work."""
     topics: dict[str, dict] = {}
-    board_offset = 0
-    while True:
-        page_topics = list_topics(page_offset=board_offset)
-        if not page_topics:
-            # A real end-of-board page is reliably empty, but so is a page
-            # that failed to parse for some transient reason -- a board
-            # page can legitimately have fewer than TOPICS_PER_PAGE topics
-            # (confirmed in testing), so an exact-count check is too
-            # fragile to trust as the stop condition. Retry once before
-            # concluding we've truly reached the end.
-            retry = list_topics(page_offset=board_offset)
-            if not retry:
-                break
-            page_topics = retry
-
+    for page_num, page_topics in enumerate(walk_board_pages()):
         for topic in page_topics:
             topics.setdefault(topic["topic_id"], topic)
-        logger.info(f"discovered {len(topics)} topics so far (board_offset={board_offset})")
-        board_offset += TOPICS_PER_PAGE
+        logger.info(f"discovered {len(topics)} topics so far "
+                    f"(board_offset={page_num * TOPICS_PER_PAGE})")
     return list(topics.values())
 
 
