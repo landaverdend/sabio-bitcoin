@@ -10,6 +10,7 @@ type CommitsResponse = {
   author: string | null
   since: string | null
   until: string | null
+  q: string | null
   commits: CommitInfo[]
 }
 
@@ -17,6 +18,7 @@ export type CommitFilters = {
   author?: string
   since?: string
   until?: string
+  q?: string
 }
 
 async function fetchRepoCommits(
@@ -29,6 +31,7 @@ async function fetchRepoCommits(
   if (filters.author) params.set("author", filters.author)
   if (filters.since) params.set("since", filters.since)
   if (filters.until) params.set("until", filters.until)
+  if (filters.q) params.set("q", filters.q)
   const res = await fetch(`/repo/commits?${params}`)
   if (!res.ok) {
     throw new Error(`failed to fetch commits: ${res.status}`)
@@ -45,6 +48,7 @@ function repoCommitsQuery(page: number, repoName: string, ref: string, filters: 
       filters.author ?? null,
       filters.since ?? null,
       filters.until ?? null,
+      filters.q ?? null,
       page,
     ],
     queryFn: () => fetchRepoCommits(repoName, ref, page, filters),

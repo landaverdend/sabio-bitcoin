@@ -25,6 +25,22 @@ export default defineConfig({
       // frontend's own client-side route for the chat page, and a broad
       // proxy rule would intercept it before Vite/React Router ever see it.
       "/chat/stream": "http://localhost:8010",
+      // /people and /people/:id are GET routes that exactly overlap the
+      // frontend's own client-side page paths, unlike /repo or /chat/stream.
+      // A plain proxy rule would send a hard reload of /people straight to
+      // the backend (404) instead of the SPA shell. bypass returning req.url
+      // (a no-op) only for real document navigations (Sec-Fetch-Dest:
+      // document) lets Vite serve the SPA shell on reload while the
+      // frontend's own fetch("/people?...") calls (Sec-Fetch-Dest: empty)
+      // still proxy through normally.
+      "/people": {
+        target: "http://localhost:8010",
+        bypass(req) {
+          if (req.headers["sec-fetch-dest"] === "document") {
+            return req.url
+          }
+        },
+      },
     },
   },
 })

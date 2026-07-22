@@ -6,8 +6,10 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import ChatPage from "@/pages/ChatPage"
 import CodePage from "@/pages/CodePage"
 import CommsPage from "@/pages/CommsPage"
+import PeoplePage from "@/pages/PeoplePage"
 import CommitDetailPage from "@/pages/code/CommitDetailPage"
 import CommitsPage from "@/pages/code/CommitsPage"
+import PersonDetailPage from "@/pages/people/PersonDetailPage"
 
 function App() {
   useEffect(() => {
@@ -38,6 +40,8 @@ function App() {
               <Route path="/code/commits/*" element={<CommitsPage />} />
               <Route path="/code/commit/:sha" element={<CommitDetailPage />} />
               <Route path="/comms" element={<CommsPage />} />
+              <Route path="/people" element={<PeoplePage />} />
+              <Route path="/people/:id" element={<PersonDetailPage />} />
             </Routes>
           </main>
         </SidebarInset>

@@ -1,4 +1,4 @@
-import { Bot, Code2, MessagesSquare } from "lucide-react"
+import { Bot, Code2, MessagesSquare, Users } from "lucide-react"
 import { NavLink, useLocation } from "react-router-dom"
 
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -19,6 +19,7 @@ const items = [
   { to: "/chat", label: "Chat", icon: Bot },
   { to: "/code", label: "Code", icon: Code2 },
   { to: "/comms", label: "Comms", icon: MessagesSquare },
+  { to: "/people", label: "People", icon: Users },
 ]
 
 export function AppSidebar() {

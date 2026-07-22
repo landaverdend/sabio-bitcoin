@@ -211,6 +211,7 @@ def get_commits(
     author: str | None = None,
     since: str | None = None,
     until: str | None = None,
+    q: str | None = None,
 ) -> dict:
     """Paginated commit history for a ref, newest first -- same order as
     GitHub's own commits view. page is 1-indexed, matching how it'll be used
@@ -221,7 +222,9 @@ def get_commits(
     are "YYYY-MM-DD" dates forming an inclusive range -- each is expanded to
     the start/end of that day since git's own --since/--until treat a bare
     date as that day's midnight, which would exclude commits made *during*
-    the boundary days."""
+    the boundary days. q is a free-text, case-insensitive search over the
+    commit message (git's own --grep) -- combines with author/since/until as
+    AND, e.g. "this person's commits mentioning 'wallet'"."""
     repo = _get_repo(repo_name)
     page = max(1, page)
     skip = (page - 1) * COMMITS_PAGE_SIZE
@@ -235,6 +238,8 @@ def get_commits(
         if not _ISO_DATE_RE.match(value):
             raise HTTPException(status_code=400, detail=f"invalid {label} date: {value}")
         filter_args.append(f"--{label}={value} {suffix}")
+    if q:
+        filter_args += ["-i", f"--grep={q}"]
     try:
         total = int(repo.git.rev_list("--count", *filter_args, ref))
         raw = repo.git.log(
@@ -253,6 +258,7 @@ def get_commits(
         "author": author,
         "since": since,
         "until": until,
+        "q": q,
         "commits": commits,
     }
 

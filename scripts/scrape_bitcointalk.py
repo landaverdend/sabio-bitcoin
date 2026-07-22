@@ -147,22 +147,27 @@ def walk_board_pages():
     at the true end. SMF here never returns an empty page past the last one
     -- confirmed empirically: a way-out-of-range offset (e.g. 300000) returns
     the exact same topic set as the true last page, byte-for-byte, rather
-    than signaling the end any other way (this is what caused
-    discover_all_topics() to loop for hours: "stop on empty" never fired).
-    So the real stop condition is "this page's topics are identical to the
-    previous page's", not "this page is empty" -- the latter is kept too,
-    in case some other out-of-range response shape shows up."""
+    than signaling the end any other way. Tracks every topic_id seen across
+    the *whole* walk (not just the immediately preceding page) before
+    declaring a page all-duplicate -- a per-topic version of this same
+    "compare only to the previous page" approach turned out to fail on a
+    real topic that cycled through a shifting rotation of already-seen
+    content with no two *adjacent* pages ever exactly equal, looping for
+    hours. Tracking the full history avoids both failure modes: it can't
+    loop forever on a shifting repeat, and it can't stop early on a
+    coincidental one-page overlap either."""
     board_offset = 0
-    prev_ids = None
+    seen_ids: set[str] = set()
     while True:
         topics = list_topics(page_offset=board_offset)
         if not topics:
             break
-        ids = frozenset(t["topic_id"] for t in topics)
-        if ids == prev_ids:
+        new_topics = [t for t in topics if t["topic_id"] not in seen_ids]
+        if not new_topics:
             break
+        for t in new_topics:
+            seen_ids.add(t["topic_id"])
         yield topics
-        prev_ids = ids
         board_offset += TOPICS_PER_PAGE
 
 
@@ -247,11 +252,28 @@ def list_posts(topic_id: str, page_offset: int = 0) -> list[dict]:
 
 
 def all_posts_for_topic(topic_id: str):
-    """Yield every post in a topic, walking pagination until a page comes back short."""
+    """Yield every post in a topic, walking pagination until the true end.
+    Past the real end, SMF doesn't clamp to one fixed repeating page here --
+    confirmed on a real topic that cycled through some shifting rotation of
+    the same ~476 real messages forever, with no two *adjacent* pages ever
+    exactly equal (a page-to-previous-page comparison never fired, looping
+    for hours re-fetching content already seen many pages back). The only
+    reliable stop condition is tracking every msg_id seen across the *whole*
+    walk and stopping once a full page contributes zero new ones -- not just
+    comparing to the immediately preceding page, which can also stop too
+    early on a coincidental partial overlap and silently undercount."""
     offset = 0
+    seen_ids: set[str] = set()
     while True:
         posts = list_posts(topic_id, page_offset=offset)
-        yield from posts
+        if not posts:
+            return
+        new_posts = [p for p in posts if p["msg_id"] not in seen_ids]
+        if not new_posts:
+            return
+        for p in new_posts:
+            seen_ids.add(p["msg_id"])
+            yield p
         if len(posts) < POSTS_PER_PAGE:
             return
         offset += POSTS_PER_PAGE

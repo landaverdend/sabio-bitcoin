@@ -2,6 +2,7 @@ import { ChevronLeft, Code, Copy, GitCommitHorizontal } from "lucide-react"
 import { useMemo, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
+import { ListSkeleton } from "@/components/ListRowSkeleton"
 import { Button } from "@/components/ui/button"
 import { formatRelativeDate } from "@/lib/format-date"
 import { AuthorFilter } from "@/pages/code/AuthorFilter"
@@ -90,6 +91,11 @@ export default function CommitsPage() {
       </div>
 
       <div className="flex-1 px-6 py-4">
+        {isLoading && commits.length === 0 && (
+          <div className="overflow-hidden rounded-md border">
+            <ListSkeleton rows={8} trailing />
+          </div>
+        )}
         {groups.map(([label, dayCommits]) => (
           <div key={label} className="mb-6">
             <h2 className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
