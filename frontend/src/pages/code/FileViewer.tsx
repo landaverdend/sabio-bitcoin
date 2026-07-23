@@ -16,6 +16,7 @@ type FileViewerProps = {
   activePath: string | null
   onSelectTab: (path: string) => void
   onCloseTab: (path: string) => void
+  repoName: string
   browseRef: string
 }
 
@@ -23,7 +24,14 @@ function basename(path: string): string {
   return path.split("/").pop() ?? path
 }
 
-export function FileViewer({ openPaths, activePath, onSelectTab, onCloseTab, browseRef }: FileViewerProps) {
+export function FileViewer({
+  openPaths,
+  activePath,
+  onSelectTab,
+  onCloseTab,
+  repoName,
+  browseRef,
+}: FileViewerProps) {
   const { theme } = useTheme()
   const isDark =
     theme === "dark" ||
@@ -37,11 +45,11 @@ export function FileViewer({ openPaths, activePath, onSelectTab, onCloseTab, bro
   // cursor), not a manual per-file toggle.
   const [currentLine, setCurrentLine] = useState(1)
 
-  const results = useRepoFiles(openPaths, "core", browseRef)
+  const results = useRepoFiles(openPaths, repoName, browseRef)
   const activeIndex = activePath ? openPaths.indexOf(activePath) : -1
   const activeResult = activeIndex >= 0 ? results[activeIndex] : undefined
 
-  const blameResult = useRepoBlame(activePath, activePath !== null, "core", browseRef)
+  const blameResult = useRepoBlame(activePath, activePath !== null, repoName, browseRef)
 
   // Re-sync on tab switch: @monaco-editor/react swaps the bound model when
   // `path` changes, and the new model's cursor position may not line up

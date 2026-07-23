@@ -8,6 +8,7 @@ import { getMonacoLanguage } from "@/pages/code/monaco-language"
 
 type DiffFileProps = {
   file: CommitFile
+  repoName: string
   sha: string
   parentSha: string | null
 }
@@ -16,7 +17,7 @@ function basename(path: string): string {
   return path.split("/").pop() ?? path
 }
 
-export function DiffFile({ file, sha, parentSha }: DiffFileProps) {
+export function DiffFile({ file, repoName, sha, parentSha }: DiffFileProps) {
   const { theme } = useTheme()
   const isDark =
     theme === "dark" ||
@@ -28,8 +29,8 @@ export function DiffFile({ file, sha, parentSha }: DiffFileProps) {
   const fetchOriginal = file.status !== "added" && parentSha !== null
   const fetchModified = file.status !== "deleted"
 
-  const original = useRepoFile(originalPath, "core", parentSha ?? "HEAD", fetchOriginal)
-  const modified = useRepoFile(file.path, "core", sha, fetchModified)
+  const original = useRepoFile(originalPath, repoName, parentSha ?? "HEAD", fetchOriginal)
+  const modified = useRepoFile(file.path, repoName, sha, fetchModified)
 
   const Icon = getFileIcon(basename(file.path))
   const isLoading = (fetchOriginal && original.isLoading) || (fetchModified && modified.isLoading)

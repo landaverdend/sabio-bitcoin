@@ -14,10 +14,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { DEFAULT_REPO } from "@/lib/repos"
 
 const items = [
   { to: "/chat", label: "Chat", icon: Bot },
-  { to: "/code", label: "Code", icon: Code2 },
+  { to: `/code/${DEFAULT_REPO}`, label: "Code", icon: Code2, matchPrefix: "/code" },
   { to: "/comms", label: "Comms", icon: MessagesSquare },
   { to: "/people", label: "People", icon: Users },
 ]
@@ -41,7 +42,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
                     render={<NavLink to={item.to} />}
-                    isActive={location.pathname === item.to}
+                    isActive={location.pathname.startsWith(item.matchPrefix ?? item.to)}
                     tooltip={item.label}
                   >
                     <item.icon />

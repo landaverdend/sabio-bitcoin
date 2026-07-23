@@ -50,10 +50,10 @@ class _Entity:
 _ENTITIES = (
     _Entity(type="person", table="people",
             label_expr="coalesce(display_name, '(unknown)') || ' -- ' || "
-                        "coalesce(email, bitcointalk_username, '(no contact)')",
-            exact_cols=("email", "bitcointalk_username"),
-            fuzzy_cols=("display_name", "email", "bitcointalk_username"),
-            extra_cols=("email", "bitcointalk_username")),
+                        "coalesce(email, bitcointalk_username, github_username, '(no contact)')",
+            exact_cols=("email", "bitcointalk_username", "github_username"),
+            fuzzy_cols=("display_name", "email", "bitcointalk_username", "github_username"),
+            extra_cols=("email", "bitcointalk_username", "github_username")),
 )
 
 
@@ -132,15 +132,19 @@ def run_query(sql: str, params: dict) -> list[tuple]:
 
 
 def resolve(query: str, limit: int = 10) -> list[dict]:
-    """Find the person a human name, email, or BitcoinTalk username might refer to.
+    """Find the person a human name, email, BitcoinTalk username, or GitHub
+    username might refer to.
 
     Searches known people across the local bitcoin-dev mailing list archive,
-    git history, and BitcoinTalk. Returns a ranked list of candidates to
-    disambiguate between -- not every sender resolves to a person
-    (shared/relay addresses are excluded). email and bitcointalk_username are
-    each null when that candidate has no identity of that kind (e.g. a
-    forum-only poster has no email) -- check before using one to filter
-    another tool (e.g. comms' search_messages, or git commits by author email).
+    git history, BitcoinTalk, and linked GitHub accounts. Returns a ranked
+    list of candidates to disambiguate between -- not every sender resolves
+    to a person (shared/relay addresses are excluded). email,
+    bitcointalk_username, and github_username are each null when that
+    candidate has no identity of that kind (e.g. a forum-only poster has no
+    email, and github_username is only set for people GitHub actually
+    confirmed as linked to a commit email) -- check before using one to
+    filter another tool (e.g. comms' search_messages, git commits by author
+    email, or a GitHub PR search by author).
     """
     q = (query or "").strip()
     if not q:
@@ -153,7 +157,7 @@ def resolve(query: str, limit: int = 10) -> list[dict]:
         "limit": max(1, min(int(limit or 10), _MAX_RESULTS)),
     })
     candidates = []
-    for id_, type_, label, score, email, bitcointalk_username in rows:
+    for id_, type_, label, score, email, bitcointalk_username, github_username in rows:
         candidates.append({
             "id": id_,
             "type": type_,
@@ -162,5 +166,6 @@ def resolve(query: str, limit: int = 10) -> list[dict]:
             "person_id": int(id_.partition(":")[2]),
             "email": email,
             "bitcointalk_username": bitcointalk_username,
+            "github_username": github_username,
         })
     return candidates

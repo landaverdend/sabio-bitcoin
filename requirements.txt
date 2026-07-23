@@ -2,7 +2,6 @@ google-adk[litellm]
 anthropic
 python-dotenv
 PyGithub
-gitpython
 yoyo-migrations
 psycopg2-binary
 fastapi

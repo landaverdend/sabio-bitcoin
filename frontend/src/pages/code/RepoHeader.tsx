@@ -3,16 +3,18 @@ import { Link } from "react-router-dom"
 
 import { formatRelativeDate } from "@/lib/format-date"
 import { BranchSwitcher } from "@/pages/code/BranchSwitcher"
+import { RepoSwitcher } from "@/pages/code/RepoSwitcher"
 import { useRepoBranches } from "@/pages/code/hooks/use-repo-branches"
 import { useRepoCommit } from "@/pages/code/hooks/use-repo-commit"
 import { useRepoSummary } from "@/pages/code/hooks/use-repo-summary"
 
 type RepoHeaderProps = {
+  repoName: string
   browseRef: string
 }
 
-export function RepoHeader({ browseRef }: RepoHeaderProps) {
-  const { data: branchesData } = useRepoBranches()
+export function RepoHeader({ repoName, browseRef }: RepoHeaderProps) {
+  const { data: branchesData } = useRepoBranches(repoName)
   const matchedBranch = branchesData?.branches.find((b) => b.ref === browseRef)
   const isHead = browseRef === "HEAD"
   // A ref is "on a branch" (normal header + switcher) if it's HEAD or
@@ -22,8 +24,8 @@ export function RepoHeader({ browseRef }: RepoHeaderProps) {
   // branch there, matching GitHub's own tree-at-a-commit view).
   const isKnownBranch = isHead || !!matchedBranch
 
-  const { data } = useRepoSummary("core", browseRef)
-  const { data: commit } = useRepoCommit(browseRef, "core", !isKnownBranch)
+  const { data } = useRepoSummary(repoName, browseRef)
+  const { data: commit } = useRepoCommit(browseRef, repoName, !isKnownBranch)
 
   // Fixed height regardless of loading state so the panels below don't
   // jump once data arrives.
@@ -43,7 +45,7 @@ export function RepoHeader({ browseRef }: RepoHeaderProps) {
           </span>
         )}
         <Link
-          to="/code"
+          to={`/code/${repoName}`}
           className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" />
@@ -55,15 +57,23 @@ export function RepoHeader({ browseRef }: RepoHeaderProps) {
 
   const currentBranchName = matchedBranch?.name ?? data?.branch ?? "master"
   const commitsHref =
-    matchedBranch && !matchedBranch.is_default ? `/code/commits/${matchedBranch.ref}` : "/code/commits"
+    matchedBranch && !matchedBranch.is_default
+      ? `/code/${repoName}/commits/${matchedBranch.ref}`
+      : `/code/${repoName}/commits`
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-4 border-b px-4 text-sm">
+      <RepoSwitcher current={repoName} />
       {data && (
         <>
-          <BranchSwitcher current={currentBranchName} defaultHref="/code" branchBasePath="/code/tree" />
+          <BranchSwitcher
+            repoName={repoName}
+            current={currentBranchName}
+            defaultHref={`/code/${repoName}`}
+            branchBasePath={`/code/${repoName}/tree`}
+          />
           <Link
-            to={`/code/commit/${data.latest_commit.sha}`}
+            to={`/code/${repoName}/commit/${data.latest_commit.sha}`}
             className="min-w-0 flex-1 truncate text-muted-foreground hover:text-foreground"
           >
             <span className="text-foreground">{data.latest_commit.message}</span>

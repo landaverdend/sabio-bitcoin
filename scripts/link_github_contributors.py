@@ -1,10 +1,14 @@
 """Link people to their GitHub account, and add git-only contributors people
 doesn't know about yet (e.g. someone who never posted to the mailing list).
 
-Source of truth for identity is the local git clone (free, no rate limit,
-comprehensive); GitHub is only consulted to check whether a given commit
-email is linked to a verified account (one lightweight API call per distinct
-email -- verified to accept a plain email string, same as `git log --author`).
+Identity comes from walking the repo's full commit history via GitHub's REST
+API (no local clone anywhere in this project anymore) -- slower and more
+API-call-hungry than reading a local clone would be (a full walk of
+bitcoin/bitcoin's history is a few hundred paginated requests on top of the
+per-email lookups below), but there's no local git object database left to
+read. GitHub is then consulted per distinct email to check whether it's
+linked to a verified account (one lightweight API call per distinct email --
+verified to accept a plain email string, same as `git log --author`).
 
 Only emails GitHub actually confirms are linked get written: an unlinked
 email (bots, merge-script, decade-old drive-by contributors) is skipped
@@ -22,13 +26,11 @@ from collections import Counter
 from pathlib import Path
 
 from dotenv import load_dotenv
-from git import Repo
 from github import Auth, Github
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.repos.github_tools import REPOS as GITHUB_REPO_SLUGS  # noqa: E402
-from agents.repos.indexer import REPOS as LOCAL_REPO_PATHS  # noqa: E402
 from db.client import get_connection  # noqa: E402
 
 load_dotenv()
@@ -53,22 +55,19 @@ def _github_client() -> Github:
     return Github(auth=Auth.Token(token)) if token else Github()
 
 
-def local_git_identities(repo_name: str) -> dict[str, tuple[str, int]]:
-    """Every distinct commit-author email from local git history, mapped to
-    (most common author name for that email, total commit count)."""
-    path = LOCAL_REPO_PATHS.get(repo_name)
-    if not path:
-        raise ValueError(f"No local path configured for repo: {repo_name}")
-    repo = Repo(path)
-
+def local_git_identities(gh_repo) -> dict[str, tuple[str, int]]:
+    """Every distinct commit-author email across a repo's full history,
+    mapped to (most common author name for that email, total commit
+    count). Walks the REST commits endpoint page by page -- see module
+    docstring for why this replaced reading a local clone."""
     names_by_email: dict[str, Counter] = {}
     counts: Counter = Counter()
-    for commit in repo.iter_commits():
-        email = commit.author.email
-        if not email:
+    for commit in gh_repo.get_commits():
+        git_author = commit.commit.author
+        if git_author is None or not git_author.email:
             continue
-        names_by_email.setdefault(email, Counter())[commit.author.name] += 1
-        counts[email] += 1
+        names_by_email.setdefault(git_author.email, Counter())[git_author.name] += 1
+        counts[git_author.email] += 1
 
     return {
         email: (names.most_common(1)[0][0], counts[email])
@@ -87,8 +86,8 @@ def github_login_for_email(gh_repo, email: str) -> str | None:
 
 def link(repo_name: str = REPO_NAME) -> dict:
     gh_repo = _github_client().get_repo(GITHUB_REPO_SLUGS[repo_name])
-    identities = local_git_identities(repo_name)
-    logger.info(f"{len(identities)} distinct commit-author emails in local history")
+    identities = local_git_identities(gh_repo)
+    logger.info(f"{len(identities)} distinct commit-author emails in repo history")
 
     updated = created = skipped = 0
     conn = get_connection()

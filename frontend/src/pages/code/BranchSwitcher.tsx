@@ -8,18 +8,19 @@ import { cn } from "@/lib/utils"
 import { useRepoBranches } from "@/pages/code/hooks/use-repo-branches"
 
 type BranchSwitcherProps = {
+  repoName: string
   current: string
-  // Where the default branch's link points (e.g. "/code"), and the prefix
-  // non-default branches are appended to (e.g. "/code/tree" ->
-  // "/code/tree/origin/29.x") -- callers browsing files vs. commit history
-  // land on different routes for the same branch.
+  // Where the default branch's link points (e.g. "/code/core"), and the
+  // prefix non-default branches are appended to (e.g. "/code/core/tree" ->
+  // "/code/core/tree/origin/29.x") -- callers browsing files vs. commit
+  // history land on different routes for the same branch.
   defaultHref: string
   branchBasePath: string
 }
 
-export function BranchSwitcher({ current, defaultHref, branchBasePath }: BranchSwitcherProps) {
+export function BranchSwitcher({ repoName, current, defaultHref, branchBasePath }: BranchSwitcherProps) {
   const [open, setOpen] = useState(false)
-  const { data } = useRepoBranches()
+  const { data } = useRepoBranches(repoName)
   const branches = data?.branches ?? []
 
   return (

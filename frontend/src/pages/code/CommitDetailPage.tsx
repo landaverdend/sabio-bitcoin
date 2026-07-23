@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom"
 
 import { Markdown } from "@/components/Markdown"
 import { formatRelativeDate } from "@/lib/format-date"
+import { DEFAULT_REPO } from "@/lib/repos"
 import { cn } from "@/lib/utils"
 import { DiffFile } from "@/pages/code/DiffFile"
 import { getFileIcon } from "@/pages/code/file-icons"
@@ -42,8 +43,8 @@ function DiffStatBar({ additions, deletions }: { additions: number; deletions: n
 }
 
 export default function CommitDetailPage() {
-  const { sha = "" } = useParams<{ sha: string }>()
-  const { data: commit, isLoading, isError } = useRepoCommit(sha)
+  const { sha = "", repoName = DEFAULT_REPO } = useParams<{ sha: string; repoName: string }>()
+  const { data: commit, isLoading, isError } = useRepoCommit(sha, repoName)
 
   const totals = useMemo(() => {
     if (!commit) return { additions: 0, deletions: 0 }
@@ -87,7 +88,7 @@ export default function CommitDetailPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col gap-3 border-b px-6 py-4">
           <Link
-            to="/code/commits"
+            to={`/code/${repoName}/commits`}
             className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
             <ChevronLeft className="size-4" />
@@ -98,7 +99,7 @@ export default function CommitDetailPage() {
               Commit <span className="font-mono">{commit.short_sha}</span>
             </h1>
             <Link
-              to={`/code/tree/${commit.sha}`}
+              to={`/code/${repoName}/tree/${commit.sha}`}
               className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
               title="Browse the repository at this point in the history"
             >
@@ -143,7 +144,12 @@ export default function CommitDetailPage() {
         <div className="px-6 py-4">
           {commit.files.map((file, i) => (
             <div key={file.path} id={`file-${i}`}>
-              <DiffFile file={file} sha={commit.sha} parentSha={commit.parents[0] ?? null} />
+              <DiffFile
+                file={file}
+                repoName={repoName}
+                sha={commit.sha}
+                parentSha={commit.parents[0] ?? null}
+              />
             </div>
           ))}
         </div>

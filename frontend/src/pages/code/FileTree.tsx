@@ -11,12 +11,13 @@ import { useRepoTree } from "@/pages/code/hooks/use-repo-tree"
 type FileTreeProps = {
   onSelectFile: (path: string) => void
   activePath: string | null
+  repoName: string
   browseRef: string
 }
 
-export function FileTree({ onSelectFile, activePath, browseRef }: FileTreeProps) {
+export function FileTree({ onSelectFile, activePath, repoName, browseRef }: FileTreeProps) {
   const [measureRef, bounds] = useMeasure()
-  const { data, isLoading, isError } = useRepoTree("core", browseRef)
+  const { data, isLoading, isError } = useRepoTree(repoName, browseRef)
 
   const tree = useMemo(() => (data ? buildTree(data.entries) : []), [data])
 

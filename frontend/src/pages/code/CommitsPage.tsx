@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom"
 import { ListSkeleton } from "@/components/ListRowSkeleton"
 import { Button } from "@/components/ui/button"
 import { formatRelativeDate } from "@/lib/format-date"
+import { DEFAULT_REPO } from "@/lib/repos"
 import { AuthorFilter } from "@/pages/code/AuthorFilter"
 import { BranchSwitcher } from "@/pages/code/BranchSwitcher"
 import type { DateRange } from "@/pages/code/DateFilter"
@@ -33,18 +34,19 @@ export default function CommitsPage() {
   // "*" (not a named param) -- same reasoning as CodePage: non-default
   // branch refs are "origin/<name>", which contains a "/".
   const params = useParams()
+  const repoName = params.repoName ?? DEFAULT_REPO
   const browseRef = params["*"] || "HEAD"
 
   const [pageCount, setPageCount] = useState(1)
   const [author, setAuthor] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
-  const { data: summary } = useRepoSummary("core", browseRef)
-  const { data: branchesData } = useRepoBranches()
+  const { data: summary } = useRepoSummary(repoName, browseRef)
+  const { data: branchesData } = useRepoBranches(repoName)
   const matchedBranch = branchesData?.branches.find((b) => b.ref === browseRef)
   const currentBranchName = matchedBranch?.name ?? summary?.branch ?? "master"
-  const codeHref = browseRef === "HEAD" ? "/code" : `/code/tree/${browseRef}`
+  const codeHref = browseRef === "HEAD" ? `/code/${repoName}` : `/code/${repoName}/tree/${browseRef}`
 
-  const pages = useRepoCommitPages(pageCount, "core", browseRef, {
+  const pages = useRepoCommitPages(pageCount, repoName, browseRef, {
     author: author ?? undefined,
     since: dateRange?.since,
     until: dateRange?.until,
@@ -69,11 +71,13 @@ export default function CommitsPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">Commits</h1>
           <BranchSwitcher
+            repoName={repoName}
             current={currentBranchName}
-            defaultHref="/code/commits"
-            branchBasePath="/code/commits"
+            defaultHref={`/code/${repoName}/commits`}
+            branchBasePath={`/code/${repoName}/commits`}
           />
           <AuthorFilter
+            repoName={repoName}
             selected={author}
             onSelect={(next) => {
               setAuthor(next)
@@ -108,7 +112,10 @@ export default function CommitsPage() {
                   key={commit.sha}
                   className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? "border-t" : ""}`}
                 >
-                  <Link to={`/code/commit/${commit.sha}`} className="min-w-0 flex-1 hover:underline">
+                  <Link
+                    to={`/code/${repoName}/commit/${commit.sha}`}
+                    className="min-w-0 flex-1 hover:underline"
+                  >
                     <p className="truncate text-sm font-medium">{commit.message}</p>
                     <p className="text-xs text-muted-foreground no-underline">
                       {commit.author} committed {formatRelativeDate(commit.date)}
@@ -124,7 +131,7 @@ export default function CommitsPage() {
                     <Copy className="size-3" />
                   </button>
                   <Link
-                    to={`/code/tree/${commit.sha}`}
+                    to={`/code/${repoName}/tree/${commit.sha}`}
                     className="flex shrink-0 items-center rounded-md border p-1.5 text-muted-foreground hover:bg-accent"
                     title="Browse the repository at this point in the history"
                   >

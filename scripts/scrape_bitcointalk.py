@@ -28,6 +28,7 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import psycopg2
 from bs4 import BeautifulSoup
 from psycopg2.extras import Json
 
@@ -67,6 +68,11 @@ FETCH_TIMEOUT = 15  # seconds -- generous next to real response times (~3s
 # instead of raising something the retry logic above can act on.
 
 _ADVISORY_LOCK_KEY = 727100600  # arbitrary; just needs to be unique to this script
+_DB_RECONNECT_RETRIES = 3  # Neon's pooled endpoint (the one DATABASE_URL points
+# at) recycles long-lived connections -- observed dying with "server closed
+# the connection unexpectedly" a few minutes into real runs, well before any
+# actual outage. Everything here is idempotent (checked by external_id before
+# insert), so reconnecting and retrying the current post is always safe.
 
 _TOPIC_LINK_RE = re.compile(r"topic=(\d+)\.0\b")
 _DATE_FORMAT = "%B %d, %Y, %I:%M:%S %p"
@@ -310,6 +316,61 @@ def _get_or_create_person(cur, username: str) -> int:
     return cur.fetchone()[0]
 
 
+def _connect_and_lock():
+    """Opens a connection and acquires the advisory lock on it. Used both for
+    the initial connect and for reconnecting mid-run -- the lock is
+    session-scoped, so it's already released on the old (dead) connection by
+    the time this runs; re-acquiring on the new one is never a real race
+    against ourselves, only against a genuinely separate second run.
+
+    Retries the connect itself, not just the query that triggered it: Neon's
+    pooled endpoint has been observed dropping this script's connection every
+    15-30 minutes, so a reconnect landing during that same instability is a
+    real, recurring case -- not a rare double-fault -- and treating it as
+    fatal made every recovery a coin flip (this is what actually killed the
+    previous run: the query retry correctly reconnected twice, then the
+    third reconnect attempt itself hit a dropped connection and crashed
+    unhandled)."""
+    last_exc: psycopg2.OperationalError | None = None
+    for attempt in range(_DB_RECONNECT_RETRIES + 1):
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT pg_try_advisory_lock(%(key)s)", {"key": _ADVISORY_LOCK_KEY})
+            if not cur.fetchone()[0]:
+                cur.close()
+                conn.close()
+                raise RuntimeError(
+                    "another scrape_bitcointalk.py is already running against this database "
+                    "-- check `ps aux | grep scrape_bitcointalk` and kill it before retrying"
+                )
+            return conn, cur
+        except psycopg2.OperationalError as exc:
+            last_exc = exc
+            if attempt == _DB_RECONNECT_RETRIES:
+                break
+            logger.warning(f"reconnect failed ({exc}) -- retrying (attempt {attempt + 1}/{_DB_RECONNECT_RETRIES})")
+            time.sleep(2 * (attempt + 1))
+    raise last_exc
+
+
+def _commit_or_reconnect(conn, cur):
+    """Commits, or reconnects (rather than crashing the whole run) if the
+    connection died before the commit went through -- same dropped-connection
+    scenario the per-post retry loop in backfill() handles, just for the
+    periodic/final commit instead of a single insert."""
+    try:
+        conn.commit()
+        return conn, cur
+    except psycopg2.OperationalError as exc:
+        logger.warning(f"commit failed ({exc}) -- reconnecting")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return _connect_and_lock()
+
+
 def backfill(max_topics: int | None = None) -> dict:
     """Walk the board page by page (whatever order SMF's default view gives
     us -- most-recent-activity first, not creation order) and upsert every
@@ -318,67 +379,83 @@ def backfill(max_topics: int | None = None) -> dict:
     external_id before insert either way, so this is resumable and idempotent
     regardless of what order topics get processed in -- stop it any time,
     rerun later, it picks up wherever it left off (ON CONFLICT DO NOTHING is
-    a backstop for the same reason, not the primary mechanism)."""
+    a backstop for the same reason, not the primary mechanism).
+
+    Also resilient to the DB connection itself dying mid-run: Neon's pooled
+    endpoint (see DATABASE_URL) has been observed killing this script's one
+    long-lived connection a few minutes into a real run ("server closed the
+    connection unexpectedly"), well before anything resembling an actual
+    outage. Since every write here is idempotent, reconnecting and retrying
+    the current post is always safe -- see _connect_and_lock/_DB_RECONNECT_RETRIES."""
     topics_seen = posts_seen = inserted = skipped = 0
 
-    conn = get_connection()
+    # A second concurrent run (e.g. a Ctrl+C that didn't actually kill the
+    # first process, or just starting it twice) doesn't error -- it silently
+    # contends for locks on the same rows as the first run, which looks
+    # exactly like a hang and is what actually happened here. Fail fast
+    # instead: an advisory lock is session-scoped, so it's released
+    # automatically if this process dies, no manual cleanup needed.
+    conn, cur = _connect_and_lock()
     try:
-        with conn.cursor() as cur:
-            # A second concurrent run (e.g. a Ctrl+C that didn't actually
-            # kill the first process, or just starting it twice) doesn't
-            # error -- it silently contends for locks on the same rows as
-            # the first run, which looks exactly like a hang and is what
-            # actually happened here. Fail fast instead: an advisory lock is
-            # session-scoped, so it's released automatically if this process
-            # dies, no manual cleanup needed.
-            cur.execute("SELECT pg_try_advisory_lock(%(key)s)", {"key": _ADVISORY_LOCK_KEY})
-            if not cur.fetchone()[0]:
-                raise RuntimeError(
-                    "another scrape_bitcointalk.py is already running against this database "
-                    "-- check `ps aux | grep scrape_bitcointalk` and kill it before retrying"
-                )
+        for page_num, topics in enumerate(walk_board_pages()):
+            if max_topics is not None and topics_seen >= max_topics:
+                break
+            # The board is sorted by most-recent-activity, not creation
+            # time, so a resumed run re-walks the same already-ingested
+            # active topics first -- that's all-skip, zero-insert, and
+            # previously produced zero log output for long stretches,
+            # which is indistinguishable from actually being stuck. One
+            # line per page fixes that regardless of insert activity.
+            logger.info(f"board page offset={page_num * TOPICS_PER_PAGE}: {len(topics)} topics "
+                        f"(so far: topics={topics_seen} inserted={inserted} skipped={skipped})")
 
-            for page_num, topics in enumerate(walk_board_pages()):
+            for topic in topics:
                 if max_topics is not None and topics_seen >= max_topics:
                     break
-                # The board is sorted by most-recent-activity, not creation
-                # time, so a resumed run re-walks the same already-ingested
-                # active topics first -- that's all-skip, zero-insert, and
-                # previously produced zero log output for long stretches,
-                # which is indistinguishable from actually being stuck. One
-                # line per page fixes that regardless of insert activity.
-                logger.info(f"board page offset={page_num * TOPICS_PER_PAGE}: {len(topics)} topics "
-                            f"(so far: topics={topics_seen} inserted={inserted} skipped={skipped})")
+                topics_seen += 1
+                for post in all_posts_for_topic(topic["topic_id"]):
+                    posts_seen += 1
+                    # A single topic can run thousands of posts long (seen
+                    # in testing) -- without this, an all-skip topic that
+                    # size produces the same "is it stuck?" silence as the
+                    # per-page heartbeat above was just added to fix.
+                    if posts_seen % 200 == 0:
+                        logger.info(f"still walking topic {topic['topic_id']} -- "
+                                    f"posts_seen={posts_seen} inserted={inserted} skipped={skipped}")
 
-                for topic in topics:
-                    if max_topics is not None and topics_seen >= max_topics:
-                        break
-                    topics_seen += 1
-                    for post in all_posts_for_topic(topic["topic_id"]):
-                        posts_seen += 1
-                        # A single topic can run thousands of posts long (seen
-                        # in testing) -- without this, an all-skip topic that
-                        # size produces the same "is it stuck?" silence as the
-                        # per-page heartbeat above was just added to fix.
-                        if posts_seen % 200 == 0:
-                            logger.info(f"still walking topic {topic['topic_id']} -- "
-                                        f"posts_seen={posts_seen} inserted={inserted} skipped={skipped}")
+                    for attempt in range(_DB_RECONNECT_RETRIES + 1):
+                        try:
+                            if _already_ingested(cur, post["msg_id"]):
+                                skipped += 1
+                                break
 
-                        if _already_ingested(cur, post["msg_id"]):
-                            skipped += 1
-                            continue
+                            person_id = (
+                                _get_or_create_person(cur, post["author"]) if post["author"] else None
+                            )
+                            cur.execute(_INSERT_SQL, _post_to_row(post, topic, person_id))
+                            row = cur.fetchone()
+                            if row:
+                                inserted += 1
+                                logger.info(f"inserted id={row[0]} -- {post['url']}")
+                            break
+                        except psycopg2.OperationalError as exc:
+                            if attempt == _DB_RECONNECT_RETRIES:
+                                raise
+                            logger.warning(
+                                f"DB connection dropped ({exc}) -- reconnecting "
+                                f"(attempt {attempt + 1}/{_DB_RECONNECT_RETRIES})"
+                            )
+                            try:
+                                conn.close()
+                            except Exception:
+                                pass
+                            time.sleep(2 * (attempt + 1))
+                            conn, cur = _connect_and_lock()
 
-                        person_id = _get_or_create_person(cur, post["author"]) if post["author"] else None
-                        cur.execute(_INSERT_SQL, _post_to_row(post, topic, person_id))
-                        row = cur.fetchone()
-                        if row:
-                            inserted += 1
-                            logger.info(f"inserted id={row[0]} -- {post['url']}")
+                if topics_seen % COMMIT_EVERY_TOPICS == 0:
+                    conn, cur = _commit_or_reconnect(conn, cur)
 
-                    if topics_seen % COMMIT_EVERY_TOPICS == 0:
-                        conn.commit()
-
-        conn.commit()
+        conn, cur = _commit_or_reconnect(conn, cur)
     finally:
         conn.close()
 

@@ -47,14 +47,15 @@ function AuthorAvatar({ name }: { name: string }) {
 }
 
 type AuthorFilterProps = {
+  repoName: string
   selected: string | null
   onSelect: (author: string | null) => void
 }
 
-export function AuthorFilter({ selected, onSelect }: AuthorFilterProps) {
+export function AuthorFilter({ repoName, selected, onSelect }: AuthorFilterProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
-  const { data } = useRepoAuthors()
+  const { data } = useRepoAuthors(repoName)
 
   const authors: Author[] = data?.authors ?? []
   const filtered = useMemo(() => {
