@@ -6,9 +6,14 @@ from backend import people
 
 class TestListPeople:
     def test_total_comes_from_the_row_window_function_not_a_second_query(self):
+        # (root_id, display_name, email, github_username, bitcointalk_username,
+        #  message_count, linked_count, total_count) -- matches list_people's
+        # canonical-group SELECT (db/migrations/0008): linked_count sits
+        # ahead of total_count, so a shape drift here would silently read the
+        # wrong column for one or the other.
         rows = [
-            (1, "Alice", "alice@example.com", None, None, 5, 19744),
-            (2, "Bob", None, "bob", None, 3, 19744),
+            (1, "Alice", "alice@example.com", None, None, 5, 0, 19744),
+            (2, "Bob", None, "bob", None, 3, 1, 19744),
         ]
         with patch.object(people, "run_query", return_value=rows) as run_query:
             result = people.list_people(page=1)
@@ -19,6 +24,7 @@ class TestListPeople:
         assert result["total"] == 19744
         assert len(result["people"]) == 2
         assert result["people"][0]["message_count"] == 5
+        assert result["people"][1]["linked_count"] == 1
 
     def test_empty_page_falls_back_to_a_real_count_instead_of_reporting_zero(self):
         with patch.object(people, "run_query", side_effect=[[], [(19744,)]]) as run_query:

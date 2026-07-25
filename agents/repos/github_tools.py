@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 from dotenv import load_dotenv
 from github import Auth, Github
@@ -36,7 +37,7 @@ def _resolve_repo(repo_name: str):
     return _get_client().get_repo(slug)
 
 
-def get_commits(repo_name: str = "core", author: str | None = None, max_count: int = 100) -> list[dict]:
+def get_commits(repo_name: str = "core", author: Optional[str] = None, max_count: int = 100) -> list[dict]:
     """List commits, newest first. author is a GitHub login or the email a
     commit was authored with (e.g. from resolve()) -- GitHub's API matches on
     those, not an arbitrary name/pattern the way local `git log --author`
@@ -142,8 +143,8 @@ def get_pr_detail(repo_name: str = "core", number: int = 0) -> dict:
 def search_prs(
     repo_name: str = "core",
     query: str = "",
-    author: str | None = None,
-    state: str | None = None,
+    author: Optional[str] = None,
+    state: Optional[str] = None,
     max_count: int = 20,
 ) -> list[dict]:
     """Search pull requests by title/body text, optionally scoped to an

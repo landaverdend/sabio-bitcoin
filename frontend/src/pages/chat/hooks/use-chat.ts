@@ -12,9 +12,11 @@ import {
 } from "lucide-react"
 import { useCallback, useState } from "react"
 
+export type ToolCall = { detail?: string; done: boolean }
+
 export type ChatBlock =
   | { type: "text"; text: string }
-  | { type: "tool"; label: string; icon: LucideIcon; done: boolean }
+  | { type: "tool"; tool: string; label: string; icon: LucideIcon; calls: ToolCall[] }
 
 export type ChatMessage =
   | { role: "user"; text: string }
@@ -42,6 +44,15 @@ const TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
 
 function toolMeta(tool: string): { label: string; icon: LucideIcon } {
   return TOOL_META[tool] ?? { label: `Using ${tool}`, icon: Search }
+}
+
+// Repo-scoped tools fire once per configured repo (core/knots/bips/secp256k1)
+// for a single question -- without this, "what changed in commits" renders
+// as four identical "Looking up commits" rows animating at once, which is
+// noise, not information. repo_name is what actually varies between those
+// calls, so it's what's worth surfacing once they're grouped into one row.
+function toolCallDetail(args: Record<string, unknown>): string | undefined {
+  return typeof args.repo_name === "string" ? args.repo_name : undefined
 }
 
 type StreamEvent =
@@ -79,6 +90,33 @@ export function useChat() {
     })
   }, [])
 
+  // Grouped by tool, not one row per call: a repo-scoped tool fires once per
+  // configured repo for a single question, and a wall of identical "Looking
+  // up commits" rows animating at once reads as noise rather than one piece
+  // of work in progress. Only merges with the *immediately preceding* block
+  // (same rationale as appendBlock's text-merging above) -- two separate,
+  // non-adjacent calls to the same tool later in the answer are genuinely
+  // separate steps and stay visually distinct.
+  const appendToolCall = useCallback((tool: string, args: Record<string, unknown>) => {
+    setMessages((prev) => {
+      const next = [...prev]
+      const last = next[next.length - 1]
+      if (last.role !== "assistant") return prev
+      const blocks = [...last.blocks]
+      const lastBlock = blocks[blocks.length - 1]
+      const call: ToolCall = { detail: toolCallDetail(args), done: false }
+
+      if (lastBlock?.type === "tool" && lastBlock.tool === tool) {
+        blocks[blocks.length - 1] = { ...lastBlock, calls: [...lastBlock.calls, call] }
+      } else {
+        const { label, icon } = toolMeta(tool)
+        blocks.push({ type: "tool", tool, label, icon, calls: [call] })
+      }
+      next[next.length - 1] = { ...last, blocks }
+      return next
+    })
+  }, [])
+
   const markLastToolDone = useCallback(() => {
     setMessages((prev) => {
       const next = [...prev]
@@ -87,10 +125,13 @@ export function useChat() {
       const blocks = [...last.blocks]
       for (let i = blocks.length - 1; i >= 0; i--) {
         const b = blocks[i]
-        if (b.type === "tool" && !b.done) {
-          blocks[i] = { ...b, done: true }
-          break
-        }
+        if (b.type !== "tool") continue
+        const callIdx = b.calls.findIndex((c) => !c.done)
+        if (callIdx === -1) continue
+        const calls = [...b.calls]
+        calls[callIdx] = { ...calls[callIdx], done: true }
+        blocks[i] = { ...b, calls }
+        break
       }
       next[next.length - 1] = { ...last, blocks }
       return next
@@ -135,8 +176,7 @@ export function useChat() {
               // something the user should see or need to know about, so
               // this event is consumed without rendering anything.
             } else if (event.type === "tool_call") {
-              const { label, icon } = toolMeta(event.tool)
-              appendBlock({ type: "tool", label, icon, done: false })
+              appendToolCall(event.tool, event.args)
             } else if (event.type === "tool_result") {
               markLastToolDone()
             } else if (event.type === "error") {
@@ -154,7 +194,7 @@ export function useChat() {
         setIsStreaming(false)
       }
     },
-    [sessionId, appendBlock, markLastToolDone],
+    [sessionId, appendBlock, appendToolCall, markLastToolDone],
   )
 
   return { messages, sendMessage, isStreaming }

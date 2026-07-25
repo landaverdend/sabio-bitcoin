@@ -2,7 +2,7 @@ import { Loader2 } from "lucide-react"
 
 import { Markdown } from "@/components/Markdown"
 import { cn } from "@/lib/utils"
-import type { ChatMessage } from "@/pages/chat/hooks/use-chat"
+import type { ChatBlock, ChatMessage } from "@/pages/chat/hooks/use-chat"
 
 // Small quiet monogram rather than a bot-in-a-circle icon -- Sabio is meant
 // to read as one collaborator with a consistent mark, not a generic
@@ -29,6 +29,38 @@ function ThinkingDots() {
   )
 }
 
+// One row per tool, not one per call -- a repo-scoped tool (get_commits,
+// get_open_prs, ...) fires once for each configured repo, and a wall of
+// identical rows animating together reads as noise. Collapsed into a single
+// row whose suffix does double duty: a live "n/total" progress count while
+// any call is still in flight, replaced by what was actually checked (e.g.
+// "core, knots") once everything settles -- so the count isn't just a
+// number, it's the answer to "checked where, exactly?".
+function ToolChip({ block }: { block: Extract<ChatBlock, { type: "tool" }> }) {
+  const total = block.calls.length
+  const doneCalls = block.calls.filter((c) => c.done)
+  const allDone = doneCalls.length === total
+  const details = doneCalls.map((c) => c.detail).filter((d): d is string => !!d)
+
+  let suffix: string | null = null
+  if (total > 1) {
+    suffix = allDone && details.length === total ? details.join(", ") : `${doneCalls.length}/${total}`
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+        allDone ? "border-border text-muted-foreground" : "border-sabio/30 bg-sabio/10 text-sabio",
+      )}
+    >
+      {allDone ? <block.icon className="size-3" /> : <Loader2 className="size-3 animate-spin" />}
+      {block.label}
+      {suffix && <span className={allDone ? "text-muted-foreground/70" : "text-sabio/70"}>· {suffix}</span>}
+    </div>
+  )
+}
+
 export function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
@@ -51,22 +83,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
               {block.text}
             </Markdown>
           ) : (
-            <div
-              key={i}
-              className={cn(
-                "flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
-                block.done
-                  ? "border-border text-muted-foreground"
-                  : "border-sabio/30 bg-sabio/10 text-sabio",
-              )}
-            >
-              {block.done ? (
-                <block.icon className="size-3" />
-              ) : (
-                <Loader2 className="size-3 animate-spin" />
-              )}
-              {block.label}
-            </div>
+            <ToolChip key={i} block={block} />
           ),
         )}
       </div>
