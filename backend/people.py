@@ -43,12 +43,17 @@ def list_people(q: str | None = None, page: int = 1) -> dict:
         """
         params["q"] = f"%{q}%"
 
-    total = run_query(f"SELECT count(*) FROM people p {where}", params)[0][0]
-
+    # count(*) OVER() rides along with the paginated rows in one round trip
+    # instead of a separate COUNT(*) query -- window functions see the full
+    # grouped result set before LIMIT/OFFSET is applied, so this is the same
+    # total a second query would give, just without paying for a second
+    # round trip to Neon (confirmed: each round trip measured at ~0.4-0.5s,
+    # which was the dominant cost once connection-per-query overhead was
+    # fixed via db.client's pool).
     rows = run_query(
         f"""
         SELECT p.id, p.display_name, p.email, p.github_username, p.bitcointalk_username,
-               count(m.id) AS message_count
+               count(m.id) AS message_count, count(*) OVER() AS total_count
         FROM people p
         LEFT JOIN messages m ON m.person_id = p.id
         {where}
@@ -58,6 +63,15 @@ def list_people(q: str | None = None, page: int = 1) -> dict:
         """,
         params,
     )
+    if rows:
+        total = rows[0][6]
+    else:
+        # An empty page (offset past the end, or truly zero matches) has no
+        # row to carry count(*) OVER() on -- fall back to a real count so
+        # this doesn't misreport a genuinely nonzero total as 0. Rare in
+        # practice (the frontend only requests a page once a prior response
+        # already showed more exist), so this doesn't cost the common case.
+        total = run_query(f"SELECT count(*) FROM people p {where}", params)[0][0]
     people = [{**_person_dict(r), "message_count": r[5]} for r in rows]
 
     return {"page": page, "page_size": PEOPLE_PAGE_SIZE, "total": total, "people": people}
@@ -110,11 +124,12 @@ def get_person_messages(person_id: int, page: int = 1, q: str | None = None, cha
             "posted_at DESC NULLS LAST"
         )
 
-    total = run_query(f"SELECT count(*) FROM messages {where}", params)[0][0]
-
+    # count(*) OVER() rides along with the page in one round trip -- see
+    # list_people's identical comment for why this matters (each round trip
+    # to Neon measured at ~0.4-0.5s).
     rows = run_query(
         f"""
-        SELECT id, channel, title, author, posted_at, url, left(body, 280)
+        SELECT id, channel, title, author, posted_at, url, left(body, 280), count(*) OVER() AS total_count
         FROM messages
         {where}
         ORDER BY {order_sql}
@@ -122,6 +137,10 @@ def get_person_messages(person_id: int, page: int = 1, q: str | None = None, cha
         """,
         params,
     )
+    if rows:
+        total = rows[0][7]
+    else:
+        total = run_query(f"SELECT count(*) FROM messages {where}", params)[0][0]
     messages = [
         {
             "id": r[0],

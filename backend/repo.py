@@ -27,6 +27,10 @@ FILE_SIZE_CAP = 2_000_000  # generous for any real source file; guards
 # against something pathological rather than a limit anyone should ever hit.
 BINARY_SNIFF_BYTES = 8000
 COMMITS_PAGE_SIZE = 30  # matches GitHub's own commit-history page size
+AUTHORS_LIMIT = 100  # get_contributors() is sorted by contribution count
+# descending already -- for a repo the size of bitcoin/bitcoin, iterating
+# every contributor (hundreds, most with a single commit) to build a filter
+# dropdown measured at 7.7s; nobody scrolls a picker past 100 names anyway.
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
 
@@ -354,7 +358,9 @@ def get_authors(repo_name: str = "core", ref: str = "HEAD") -> dict:
     the old local-git version this isn't scoped to a specific ref, since
     there's no cheap REST/GraphQL equivalent of `git shortlog -sn <ref>`."""
     repo = _resolve_repo(repo_name)
-    authors = [{"name": c.login, "commit_count": c.contributions} for c in repo.get_contributors()]
+    authors = [
+        {"name": c.login, "commit_count": c.contributions} for c in repo.get_contributors()[:AUTHORS_LIMIT]
+    ]
     return {"repo": repo_name, "ref": ref, "authors": authors}
 
 

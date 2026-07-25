@@ -16,7 +16,9 @@ input is always passed as bound params.
 
 from dataclasses import dataclass
 
-from db.client import get_connection
+import psycopg2
+
+from db.client import get_pooled_connection, put_pooled_connection
 
 # Score tiers, highest first: an exact unique identifier (email) = 1.0; an
 # exact name/title match = _EXACT_NAME_SCORE (strong, but names collide so it
@@ -47,6 +49,13 @@ class _Entity:
 # identity type stays a one-line addition if it's ever needed -- extra_cols
 # assumes every entity in the registry shares the same extra_cols, which is
 # fine for a registry of one but would need revisiting for a second entity.
+#
+# display_name is a single column, but the same person can post under a
+# different name per channel (mailing-list signature vs BitcoinTalk handle
+# vs GitHub profile name) -- person_aliases (0007) collects every name
+# variant seen for a known person, so _alias_branches below extends the
+# fuzzy match to all of them, not just whichever one happened to land in
+# display_name.
 _ENTITIES = (
     _Entity(type="person", table="people",
             label_expr="coalesce(display_name, '(unknown)') || ' -- ' || "
@@ -97,8 +106,25 @@ def _branches(entity: _Entity) -> list[str]:
     return out
 
 
+def _alias_branches(entity: _Entity) -> list[str]:
+    """Same shape as _branches' fuzzy pair, but matching against a joined
+    person_aliases row instead of a column on entity.table directly --
+    person_aliases has no columns that collide with people's, so the join
+    needs no table-qualifying."""
+    id_expr = f"'{entity.type}:' || {entity.id_col}::text"
+    extra = "".join(f", {c}" for c in entity.extra_cols)
+    join = f"FROM {entity.table} JOIN person_aliases ON person_aliases.person_id = {entity.id_col}"
+    return [
+        f"    SELECT {id_expr}, '{entity.type}', {entity.label_expr}, %(exact_name_score)s{extra}\n"
+        f"    {join} WHERE lower(alias) = %(q)s",
+        f"    SELECT {id_expr}, '{entity.type}', {entity.label_expr}, "
+        f"%(fuzzy_weight)s * similarity(alias, %(raw_q)s){extra}\n"
+        f"    {join} WHERE alias %% %(raw_q)s",
+    ]
+
+
 def _build_resolve_sql() -> str:
-    branches = [b for e in _ENTITIES for b in _branches(e)]
+    branches = [b for e in _ENTITIES for b in _branches(e)] + _alias_branches(_ENTITIES[0])
     union = "\n    UNION ALL\n".join(branches)
     extra_select = "".join(f", {c}" for c in _ENTITIES[0].extra_cols)
     return f"""
@@ -122,13 +148,36 @@ _RESOLVE_SQL = _build_resolve_sql()
 
 
 def run_query(sql: str, params: dict) -> list[tuple]:
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
-    finally:
-        conn.close()
+    """Every query here is a read (people.py's routes, resolve()'s own
+    lookup) -- the commit on success just closes out the implicit
+    transaction psycopg2 opens per query, so the connection goes back to
+    the pool idle rather than "idle in transaction".
+
+    Retries once on OperationalError -- a pooled connection gone stale
+    between requests (Neon's pooler dropping an idle one, same failure mode
+    already seen and handled in the scraper) is routine, not a reason to
+    fail the request. Any other exception (e.g. bad SQL) rolls back and
+    still returns the connection to the pool -- it's the query that's
+    broken, not the connection, so discarding a perfectly good connection
+    would be wrong."""
+    for attempt in range(2):
+        conn = get_pooled_connection()
+        healthy = True
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+            conn.commit()
+            return rows
+        except psycopg2.OperationalError:
+            healthy = False
+            if attempt == 1:
+                raise
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            put_pooled_connection(conn, discard=not healthy)
 
 
 def resolve(query: str, limit: int = 10) -> list[dict]:
