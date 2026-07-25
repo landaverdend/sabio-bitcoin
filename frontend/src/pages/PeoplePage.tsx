@@ -17,6 +17,12 @@ function personSubtitle(person: PersonSummary): string | null {
   if (person.email) parts.push(person.email)
   if (person.github_username) parts.push(`GitHub: ${person.github_username}`)
   if (person.bitcointalk_username) parts.push(`BitcoinTalk: ${person.bitcointalk_username}`)
+  // Other rows exist for the same real person (a different email, a
+  // BitcoinTalk-only identity, etc.) but aren't shown as separate list
+  // entries -- see backend/people.py's canonical_person_id grouping.
+  if (person.linked_count > 0) {
+    parts.push(`+${person.linked_count} more identit${person.linked_count === 1 ? "y" : "ies"}`)
+  }
   return parts.length > 0 ? parts.join(" · ") : null
 }
 

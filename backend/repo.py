@@ -248,16 +248,6 @@ def get_branches(repo_name: str = "core") -> dict:
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-_COUNT_QUERY = """
-query($owner: String!, $name: String!, $expression: String!, $since: GitTimestamp, $until: GitTimestamp) {
-  repository(owner: $owner, name: $name) {
-    object(expression: $expression) {
-      ... on Commit { history(since: $since, until: $until) { totalCount } }
-    }
-  }
-}
-"""
-
 
 def _format_commit(commit) -> dict:
     git_author = commit.commit.author
@@ -321,21 +311,20 @@ def get_commits(
         try:
             paginated = repo.get_commits(**kwargs)
             commits = [_format_commit(c) for c in paginated.get_page(page - 1)]
+            # PaginatedList.totalCount peeks at the last page's Link header
+            # (one cheap extra request, not a full paginate-through) --
+            # same mechanism the q-search branch above already gets for free
+            # from its own totalCount. Reflects *exactly* the filters baked
+            # into `paginated` (author/since/until), unlike the GraphQL
+            # history() query this replaced, which never had an `author`
+            # argument wired in at all and so silently returned the whole
+            # ref's commit count regardless of which author was requested --
+            # e.g. a Person page's Commits tab showed the full repo total
+            # and then "no commits found" for anyone whose filter matched
+            # nothing.
+            total = paginated.totalCount
         except GithubException as exc:
             raise HTTPException(status_code=404, detail=f"ref not found: {ref}") from exc
-
-        # Cheap total count via GraphQL history() -- avoids paginating
-        # through the whole history just to count it, which REST would need.
-        # since/until must be passed here too, or this would count the
-        # *unfiltered* history instead of matching what was actually paged.
-        count_vars = {"owner": owner, "name": name, "expression": resolved_ref}
-        if since:
-            count_vars["since"] = f"{since}T00:00:00Z"
-        if until:
-            count_vars["until"] = f"{until}T23:59:59Z"
-        data = _graphql(_COUNT_QUERY, count_vars)
-        obj = (data.get("repository") or {}).get("object") or {}
-        total = obj.get("history", {}).get("totalCount", len(commits))
 
     return {
         "repo": repo_name,

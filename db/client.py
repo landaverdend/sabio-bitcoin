@@ -1,4 +1,5 @@
 import os
+import threading
 
 import psycopg2
 from dotenv import load_dotenv
@@ -36,6 +37,7 @@ def get_connection():
 # connection on its own -- only get_pooled_connection()'s first real call
 # does, matching get_connection()'s existing lazy-per-call behavior.
 _POOL: _pool.ThreadedConnectionPool | None = None
+_POOL_LOCK = threading.Lock()
 
 
 def get_pooled_connection():
@@ -57,7 +59,18 @@ def get_pooled_connection():
     waiting for a connection that's never coming back."""
     global _POOL
     if _POOL is None:
-        _POOL = _pool.ThreadedConnectionPool(1, 10, os.environ["DATABASE_URL"], **_CONNECT_KWARGS)
+        # FastAPI runs sync routes in a thread pool, so several requests can
+        # reach this check before any of them finishes constructing the
+        # pool -- without the lock, each sees _POOL is None and builds its
+        # own ThreadedConnectionPool, the last one winning the module-level
+        # global. A connection checked out from an earlier, now-orphaned
+        # pool instance then gets returned to the surviving one, which never
+        # checked it out and rejects it (psycopg2.pool.PoolError: trying to
+        # put unkeyed connection) -- reproduced via concurrent requests hitting
+        # backend/people.py right after server startup.
+        with _POOL_LOCK:
+            if _POOL is None:
+                _POOL = _pool.ThreadedConnectionPool(1, 10, os.environ["DATABASE_URL"], **_CONNECT_KWARGS)
     return _POOL.getconn()
 
 

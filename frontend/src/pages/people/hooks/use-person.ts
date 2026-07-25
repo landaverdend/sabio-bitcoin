@@ -6,8 +6,19 @@ export type PersonChannel = {
   count: number
 }
 
-export type Person = Omit<PersonSummary, "message_count"> & {
+export type PersonIdentity = {
+  id: number
+  display_name: string | null
+  email: string | null
+  github_username: string | null
+  bitcointalk_username: string | null
+}
+
+export type Person = Omit<PersonSummary, "message_count" | "linked_count"> & {
   channels: PersonChannel[]
+  // Every raw people row folded into this profile, this one included --
+  // see backend/people.py's canonical_person_id grouping.
+  identities: PersonIdentity[]
 }
 
 async function fetchPerson(id: string): Promise<Person> {

@@ -7,6 +7,9 @@ export type PersonSummary = {
   github_username: string | null
   bitcointalk_username: string | null
   message_count: number
+  // Other people rows folded into this one as the same real person (see
+  // backend/people.py's canonical_person_id grouping) -- 0 for a solo row.
+  linked_count: number
 }
 
 type PeopleResponse = {

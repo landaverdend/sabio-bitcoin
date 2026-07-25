@@ -58,8 +58,14 @@ function repoCommitsQuery(page: number, repoName: string, ref: string, filters: 
   }
 }
 
-export function useRepoCommits(page: number, repoName = "core", ref = "HEAD", filters: CommitFilters = {}) {
-  return useQuery(repoCommitsQuery(page, repoName, ref, filters))
+export function useRepoCommits(
+  page: number,
+  repoName = "core",
+  ref = "HEAD",
+  filters: CommitFilters = {},
+  enabled = true,
+) {
+  return useQuery({ ...repoCommitsQuery(page, repoName, ref, filters), enabled })
 }
 
 /** Pages 1..pageCount, fetched in parallel and already-fetched pages served
@@ -70,8 +76,12 @@ export function useRepoCommitPages(
   repoName = "core",
   ref = "HEAD",
   filters: CommitFilters = {},
+  enabled = true,
 ) {
   return useQueries({
-    queries: Array.from({ length: pageCount }, (_, i) => repoCommitsQuery(i + 1, repoName, ref, filters)),
+    queries: Array.from({ length: pageCount }, (_, i) => ({
+      ...repoCommitsQuery(i + 1, repoName, ref, filters),
+      enabled,
+    })),
   })
 }

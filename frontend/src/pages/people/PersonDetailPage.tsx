@@ -31,23 +31,37 @@ export default function PersonDetailPage() {
   const { data: person, isLoading: personLoading } = usePerson(id)
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Unfiltered existence check -- always the full commit count for this
-  // person, regardless of what's typed into the Commits tab's own search
-  // box, since whether the tab exists at all shouldn't flicker based on a
-  // search that happens to match nothing. Same query key as the display
-  // fetch below when no search is active, so TanStack Query dedupes them
-  // into a single request in the common case.
-  const commitExistence = useRepoCommits(1, "core", "HEAD", { author: person?.display_name ?? undefined })
-  const commitTotalForExistence = commitExistence.data?.total ?? 0
-  const commitsSettled = !person?.display_name || !commitExistence.isLoading
+  // github_username, not display_name: the /repo/commits author filter is
+  // an exact GitHub login/email match (see backend/repo.py's get_commits
+  // docstring), so a free-text display name would just never match anything
+  // real. A person with no linked GitHub identity has no reliable way to
+  // filter commits by them at all, so the query is disabled entirely rather
+  // than sent unfiltered (which would return -- and appear to attribute --
+  // the whole repo's history to them).
+  const hasGithubIdentity = !!person?.github_username
+
+  // Unfiltered-by-search existence check -- always the full commit count
+  // for this person, regardless of what's typed into the Commits tab's own
+  // search box, since whether the tab exists at all shouldn't flicker based
+  // on a search that happens to match nothing. Same query key as the
+  // display fetch below when no search is active, so TanStack Query dedupes
+  // them into a single request in the common case.
+  const commitExistence = useRepoCommits(
+    1, "core", "HEAD", { author: person?.github_username ?? undefined }, hasGithubIdentity,
+  )
+  const commitTotalForExistence = hasGithubIdentity ? (commitExistence.data?.total ?? 0) : 0
+  const commitsSettled = !hasGithubIdentity || !commitExistence.isLoading
 
   const [commitSearch, setCommitSearch] = useState("")
   const commitQuery = commitSearch.trim() || undefined
   const [commitPageCount, setCommitPageCount] = useState(1)
-  const commitPages = useRepoCommitPages(commitPageCount, "core", "HEAD", {
-    author: person?.display_name ?? undefined,
-    q: commitQuery,
-  })
+  const commitPages = useRepoCommitPages(
+    commitPageCount,
+    "core",
+    "HEAD",
+    { author: person?.github_username ?? undefined, q: commitQuery },
+    hasGithubIdentity,
+  )
   const commits = useMemo(() => commitPages.flatMap((p) => p.data?.commits ?? []), [commitPages])
   const commitTotal = commitPages[0]?.data?.total ?? 0
   const commitsLoading = commitPages.some((p) => p.isLoading)
@@ -141,6 +155,19 @@ export default function PersonDetailPage() {
             </div>
           </div>
         </div>
+
+        {person.identities.length > 1 && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span className="shrink-0">Also known as:</span>
+            {person.identities
+              .filter((i) => i.id !== person.id)
+              .map((identity) => (
+                <span key={identity.id} className="rounded-full border px-2 py-0.5">
+                  {identity.email ?? identity.github_username ?? identity.bitcointalk_username ?? identity.display_name}
+                </span>
+              ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 px-6 py-4">
