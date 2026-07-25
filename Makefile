@@ -10,7 +10,7 @@ help:
 	@echo "make db-down           - stop the postgres container"
 	@echo "make migrate           - apply database migrations"
 	@echo "make backfill          - download the bitcoin-dev archive and load messages + people"
-	@echo "make link-github       - link people to GitHub accounts (~30 min, ~1300 API calls)"
+	@echo "make link-github       - link people to GitHub accounts, across all configured repos (core/knots/bips/secp256k1 -- knots' history heavily overlaps core's, so this now takes noticeably longer than a single-repo run)"
 	@echo "make scrape-bitcointalk - ongoing BitcoinTalk crawl, recency-sorted (cron-friendly, catches new posts cheaply)"
 	@echo "make backfill-bitcointalk-history - ONE-TIME full-history BitcoinTalk backfill, oldest topic first (slow discovery pass)"
 	@echo "make backend           - run the backend API (foreground)"

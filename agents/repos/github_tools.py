@@ -12,6 +12,13 @@ REPOS = {
     "secp256k1": "bitcoin-core/secp256k1",
 }
 
+# repo_name -> repo_name it forked from. Knots rebases onto each Core release
+# rather than tracking master, so nearly all of its history is Core's history
+# re-authored under a different ref -- anything walking full commit history
+# (e.g. scripts/link_github_contributors.py) should scope Knots to commits
+# since its current divergence point, not redo Core's entire walk.
+FORK_OF = {"knots": "core"}
+
 _BODY_PREVIEW_CHARS = 500
 
 

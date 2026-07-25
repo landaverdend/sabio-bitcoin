@@ -1,35 +1,47 @@
+import {
+  FileText,
+  Folder,
+  GitCommitHorizontal,
+  GitPullRequest,
+  MessageSquare,
+  Search,
+  TicketCheck,
+  UserSearch,
+  Users,
+  type LucideIcon,
+} from "lucide-react"
 import { useCallback, useState } from "react"
 
 export type ChatBlock =
   | { type: "text"; text: string }
-  | { type: "tool"; label: string; done: boolean }
+  | { type: "tool"; label: string; icon: LucideIcon; done: boolean }
 
 export type ChatMessage =
   | { role: "user"; text: string }
   | { role: "assistant"; blocks: ChatBlock[] }
 
-const TOOL_LABELS: Record<string, string> = {
-  get_commits: "Looking up commits",
-  get_open_prs: "Checking open PRs",
-  get_pr_detail: "Reading a PR",
-  get_issues: "Checking issues",
-  get_contributor_stats: "Checking contributor stats",
-  list_directory: "Browsing files",
-  read_file: "Reading a file",
-  search_code: "Searching code",
-  resolve: "Resolving identity",
-  get_message: "Reading a message",
-  get_thread: "Reading a thread",
-  search_messages: "Searching the mailing list",
+// Sabio is presented to the user as a single collaborator, not a router
+// dispatching to named sub-agents -- these labels describe what's being
+// looked up, never who's looking it up, and the "handoff" events that name
+// the internal sub-agents are deliberately never surfaced (see handleEvent
+// below).
+const TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
+  get_commits: { label: "Looking up commits", icon: GitCommitHorizontal },
+  get_open_prs: { label: "Checking open PRs", icon: GitPullRequest },
+  get_pr_detail: { label: "Reading a PR", icon: GitPullRequest },
+  get_issues: { label: "Checking issues", icon: TicketCheck },
+  get_contributor_stats: { label: "Checking contributor stats", icon: Users },
+  list_directory: { label: "Browsing files", icon: Folder },
+  read_file: { label: "Reading a file", icon: FileText },
+  search_code: { label: "Searching code", icon: Search },
+  resolve: { label: "Resolving identity", icon: UserSearch },
+  get_message: { label: "Reading a message", icon: MessageSquare },
+  get_thread: { label: "Reading a thread", icon: MessageSquare },
+  search_messages: { label: "Searching the mailing list", icon: Search },
 }
 
-const AGENT_LABELS: Record<string, string> = {
-  sabio_repos: "the repos specialist",
-  sabio_comms: "the comms specialist",
-}
-
-function toolLabel(tool: string): string {
-  return TOOL_LABELS[tool] ?? `Using ${tool}`
+function toolMeta(tool: string): { label: string; icon: LucideIcon } {
+  return TOOL_META[tool] ?? { label: `Using ${tool}`, icon: Search }
 }
 
 type StreamEvent =
@@ -119,13 +131,12 @@ export function useChat() {
             if (event.type === "text") {
               appendBlock({ type: "text", text: event.text })
             } else if (event.type === "handoff") {
-              appendBlock({
-                type: "tool",
-                label: `Consulting ${AGENT_LABELS[event.to] ?? event.to}`,
-                done: false,
-              })
+              // Internal routing between Sabio's own sub-agents -- not
+              // something the user should see or need to know about, so
+              // this event is consumed without rendering anything.
             } else if (event.type === "tool_call") {
-              appendBlock({ type: "tool", label: toolLabel(event.tool), done: false })
+              const { label, icon } = toolMeta(event.tool)
+              appendBlock({ type: "tool", label, icon, done: false })
             } else if (event.type === "tool_result") {
               markLastToolDone()
             } else if (event.type === "error") {
