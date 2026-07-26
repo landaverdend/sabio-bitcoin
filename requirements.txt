@@ -1,4 +1,8 @@
-google-adk[litellm]
+# DatabaseSessionService changed to an async driver and a new persisted
+# schema in ADK 1.22. Keep the existing synchronous Postgres integration and
+# db/migrations/0009_adk_sessions.sql on the version they were built for
+# until that upgrade is performed deliberately with `adk migrate session`.
+google-adk[litellm]==1.13.0
 anthropic
 python-dotenv
 PyGithub
@@ -8,3 +12,5 @@ fastapi
 uvicorn
 beautifulsoup4
 pytest
+pynostr
+itsdangerous

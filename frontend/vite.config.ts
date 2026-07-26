@@ -21,10 +21,14 @@ export default defineConfig({
     proxy: {
       "/repo": "http://localhost:8010",
       "/ping": "http://localhost:8010",
-      // Scoped to /chat/stream, not a bare "/chat" -- that's also the
-      // frontend's own client-side route for the chat page, and a broad
+      // Never a client-side route (unlike /people below), so a plain rule
+      // is enough -- no bypass-for-document-navigation needed.
+      "/auth": "http://localhost:8010",
+      // Keep these scoped to API paths, not a bare "/chat" -- that's also
+      // the frontend's own client-side route for the chat page, and a broad
       // proxy rule would intercept it before Vite/React Router ever see it.
       "/chat/stream": "http://localhost:8010",
+      "/chat/sessions": "http://localhost:8010",
       // /people and /people/:id are GET routes that exactly overlap the
       // frontend's own client-side page paths, unlike /repo or /chat/stream.
       // A plain proxy rule would send a hard reload of /people straight to

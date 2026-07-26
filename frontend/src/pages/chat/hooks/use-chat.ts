@@ -10,7 +10,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 export type ToolCall = { detail?: string; done: boolean }
 
@@ -42,6 +42,14 @@ export type ContextItem = {
 export type ChatMessage =
   | { role: "user"; text: string; context?: ContextItem[] }
   | { role: "assistant"; blocks: ChatBlock[] }
+
+export type ChatSessionSummary = {
+  session_id: string
+  title: string
+  last_update_time: number
+}
+
+const SESSIONS_CHANGED_EVENT = "sabio:sessions-changed"
 
 // Sabio is presented to the user as a single collaborator, not a router
 // dispatching to named sub-agents -- these labels describe what's being
@@ -101,6 +109,7 @@ function toolCallDetail(tool: string, args: Record<string, unknown>): string | u
 }
 
 type StreamEvent =
+  | { type: "user_message"; message: string; context: ContextItem[] }
   | { type: "text"; author: string; text: string }
   | { type: "handoff"; to: string }
   | { type: "tool_call"; author: string; tool: string; args: Record<string, unknown> }
@@ -108,18 +117,219 @@ type StreamEvent =
   | { type: "error"; message: string }
   | { type: "done" }
 
-export function useChat() {
-  // Session only needs to survive this tab -- no accounts/persistence yet,
-  // so a fresh id per mount (lost on reload) is enough for now.
-  const [sessionId] = useState(() => crypto.randomUUID())
+// Rebuilds a full message list from a stored session's event history in one
+// pass -- deliberately a separate pure fold rather than routing history
+// through the same setMessages-based helpers the live stream uses below.
+// Those assume they're always appending to "the current in-flight assistant
+// turn"; a replay instead has user and assistant events interleaved across
+// an entire conversation, so it re-implements the same merge rules (adjacent
+// text coalesces, adjacent same-tool calls group) as a straight fold over
+// the full list instead.
+function reduceEvents(events: StreamEvent[]): ChatMessage[] {
+  const messages: ChatMessage[] = []
+
+  for (const event of events) {
+    if (event.type === "error" || event.type === "done") continue
+    if (event.type === "handoff") continue // internal routing, never surfaced (see sendMessage below)
+
+    if (event.type === "user_message") {
+      messages.push({
+        role: "user",
+        text: event.message,
+        context: event.context.length > 0 ? event.context : undefined,
+      })
+      continue
+    }
+
+    let last = messages[messages.length - 1]
+    if (!last || last.role !== "assistant") {
+      last = { role: "assistant", blocks: [] }
+      messages.push(last)
+    }
+    const blocks = last.blocks
+    const lastBlock = blocks[blocks.length - 1]
+
+    if (event.type === "text") {
+      if (lastBlock?.type === "text") {
+        lastBlock.text += event.text
+      } else {
+        blocks.push({ type: "text", text: event.text })
+      }
+    } else if (event.type === "tool_call") {
+      const call: ToolCall = { detail: toolCallDetail(event.tool, event.args), done: true }
+      if (lastBlock?.type === "tool" && lastBlock.tool === event.tool) {
+        lastBlock.calls.push(call)
+      } else {
+        const { label, icon } = toolMeta(event.tool)
+        blocks.push({ type: "tool", tool: event.tool, label, icon, calls: [call] })
+      }
+    }
+    // tool_result: a completed session's calls are already known-done (see
+    // `done: true` above) -- there's no in-flight state left to mark.
+  }
+
+  return messages
+}
+
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, { credentials: "include", ...init })
+  const contentType = res.headers.get("content-type") ?? ""
+
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw new Error(
+      `API returned ${contentType || "an unknown content type"} for ${url} (${res.status})`,
+    )
+  }
+
+  const body = (await res.json()) as T & { detail?: string }
+  if (!res.ok) {
+    throw new Error(body?.detail || `request failed: ${res.status}`)
+  }
+  return body
+}
+
+async function fetchSessions(): Promise<ChatSessionSummary[]> {
+  return requestJson<ChatSessionSummary[]>("/chat/sessions")
+}
+
+async function fetchSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+  const result = await requestJson<{ session_id: string; events: StreamEvent[] }>(
+    `/chat/sessions/${sessionId}`,
+  )
+  return reduceEvents(result.events)
+}
+
+export function useChat(pubkey: string | null, restoreLatest = true) {
+  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID())
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [sessionError, setSessionError] = useState<string | null>(null)
+
+  // Restore the most recently active conversation after auth resolves. A
+  // pubkey change is a hard tenant boundary: clear the prior user's local
+  // state before fetching anything for the new identity.
+  useEffect(() => {
+    let cancelled = false
+    setMessages([])
+    setSessions([])
+    setSessionId(crypto.randomUUID())
+    setSessionError(null)
+
+    if (!pubkey || !restoreLatest) {
+      setIsLoadingHistory(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setIsLoadingHistory(true)
+    void (async () => {
+      try {
+        const stored = await fetchSessions()
+        if (cancelled) return
+        setSessions(stored)
+        if (stored.length > 0) {
+          const latest = stored[0]
+          const restored = await fetchSessionMessages(latest.session_id)
+          if (cancelled) return
+          setSessionId(latest.session_id)
+          setMessages(restored)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSessionError(err instanceof Error ? err.message : "Could not load conversations")
+        }
+      } finally {
+        if (!cancelled) setIsLoadingHistory(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [pubkey, restoreLatest])
+
+  const refreshSessions = useCallback(async () => {
+    if (!pubkey || !restoreLatest) return
+    try {
+      setSessions(await fetchSessions())
+    } catch (err) {
+      setSessionError(err instanceof Error ? err.message : "Could not refresh conversations")
+    }
+  }, [pubkey, restoreLatest])
+
+  // CodeChatPanel deliberately owns an independent active chat, but those
+  // conversations live in the same account. Refresh this shared list when
+  // any chat hook finishes creating or updating a session.
+  useEffect(() => {
+    if (!restoreLatest) return
+    const refresh = () => void refreshSessions()
+    window.addEventListener(SESSIONS_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(SESSIONS_CHANGED_EVENT, refresh)
+  }, [refreshSessions, restoreLatest])
+
+  const newSession = useCallback(() => {
+    if (isStreaming) return
+    setSessionId(crypto.randomUUID())
+    setMessages([])
+    setSessionError(null)
+  }, [isStreaming])
+
+  const loadSession = useCallback(
+    async (nextSessionId: string) => {
+      if (isStreaming || nextSessionId === sessionId) return
+      setIsLoadingHistory(true)
+      setSessionError(null)
+      try {
+        const restored = await fetchSessionMessages(nextSessionId)
+        setSessionId(nextSessionId)
+        setMessages(restored)
+      } catch (err) {
+        setSessionError(err instanceof Error ? err.message : "Could not load conversation")
+      } finally {
+        setIsLoadingHistory(false)
+      }
+    },
+    [isStreaming, sessionId],
+  )
+
+  const deleteSession = useCallback(
+    async (deletedSessionId: string) => {
+      if (isStreaming) return
+      setIsLoadingHistory(true)
+      setSessionError(null)
+      try {
+        await requestJson<{ ok: boolean }>(`/chat/sessions/${deletedSessionId}`, {
+          method: "DELETE",
+        })
+        const remaining = sessions.filter((session) => session.session_id !== deletedSessionId)
+        setSessions(remaining)
+        if (deletedSessionId === sessionId) {
+          if (remaining.length > 0) {
+            const next = remaining[0]
+            setSessionId(next.session_id)
+            setMessages(await fetchSessionMessages(next.session_id))
+          } else {
+            setSessionId(crypto.randomUUID())
+            setMessages([])
+          }
+        }
+      } catch (err) {
+        setSessionError(err instanceof Error ? err.message : "Could not delete conversation")
+      } finally {
+        setIsLoadingHistory(false)
+      }
+    },
+    [isStreaming, sessionId, sessions],
+  )
 
   const appendBlock = useCallback((block: ChatBlock) => {
     setMessages((prev) => {
       const next = [...prev]
       const last = next[next.length - 1]
-      if (last.role !== "assistant") return prev
+      if (!last || last.role !== "assistant") return prev
       const blocks = [...last.blocks]
       const lastBlock = blocks[blocks.length - 1]
       // Consecutive text parts (root's own text plus a sub-agent's) read as
@@ -146,7 +356,7 @@ export function useChat() {
     setMessages((prev) => {
       const next = [...prev]
       const last = next[next.length - 1]
-      if (last.role !== "assistant") return prev
+      if (!last || last.role !== "assistant") return prev
       const blocks = [...last.blocks]
       const lastBlock = blocks[blocks.length - 1]
       const call: ToolCall = { detail: toolCallDetail(tool, args), done: false }
@@ -166,7 +376,7 @@ export function useChat() {
     setMessages((prev) => {
       const next = [...prev]
       const last = next[next.length - 1]
-      if (last.role !== "assistant") return prev
+      if (!last || last.role !== "assistant") return prev
       const blocks = [...last.blocks]
       for (let i = blocks.length - 1; i >= 0; i--) {
         const b = blocks[i]
@@ -185,6 +395,7 @@ export function useChat() {
 
   const sendMessage = useCallback(
     async (text: string, context: ContextItem[] = []) => {
+      setSessionError(null)
       setMessages((prev) => [
         ...prev,
         { role: "user", text, context: context.length > 0 ? context : undefined },
@@ -195,6 +406,7 @@ export function useChat() {
       try {
         const res = await fetch("/chat/stream", {
           method: "POST",
+          credentials: "include", // the login (Nostr auth) session cookie
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             session_id: sessionId,
@@ -229,6 +441,9 @@ export function useChat() {
 
             if (event.type === "text") {
               appendBlock({ type: "text", text: event.text })
+            } else if (event.type === "user_message") {
+              // User events are returned only by the history endpoint, not
+              // by the live Runner stream.
             } else if (event.type === "handoff") {
               // Internal routing between Sabio's own sub-agents -- not
               // something the user should see or need to know about, so
@@ -250,10 +465,22 @@ export function useChat() {
       } finally {
         markLastToolDone()
         setIsStreaming(false)
+        window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT))
       }
     },
     [sessionId, appendBlock, appendToolCall, markLastToolDone],
   )
 
-  return { messages, sendMessage, isStreaming }
+  return {
+    sessionId,
+    sessions,
+    messages,
+    sendMessage,
+    isStreaming,
+    isLoadingHistory,
+    sessionError,
+    newSession,
+    loadSession,
+    deleteSession,
+  }
 }

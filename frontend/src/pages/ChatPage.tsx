@@ -1,10 +1,11 @@
-import { ArrowUp } from "lucide-react"
+import { ArrowUp, Loader2, Plus, Trash2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { MessageBubble } from "@/pages/chat/MessageBubble"
-import { useChat } from "@/pages/chat/hooks/use-chat"
+import { useAppChat } from "@/pages/chat/chat-context"
 
 // Grounded in what Sabio can actually do (repos + comms tools) rather than
 // generic chatbot filler -- each one maps to a real, answerable query.
@@ -16,8 +17,21 @@ const STARTERS = [
 ]
 
 export default function ChatPage() {
-  const { messages, sendMessage, isStreaming } = useChat()
+  const { pubkey, login } = useAuth()
+  const {
+    sessionId,
+    sessions,
+    messages,
+    sendMessage,
+    isStreaming,
+    isLoadingHistory,
+    sessionError,
+    newSession,
+    loadSession,
+    deleteSession,
+  } = useAppChat()
   const [input, setInput] = useState("")
+  const [authError, setAuthError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,15 +40,70 @@ export default function ChatPage() {
 
   const submit = (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed || isStreaming) return
+    if (!trimmed || isStreaming || isLoadingHistory) return
+    // Not signed in -- prompt the same Nostr login the sidebar offers
+    // instead of letting this hit the chat endpoint's 401 and surface as a
+    // generic "something went wrong". Doesn't auto-send afterward; hit send
+    // again once connected.
+    if (!pubkey) {
+      setAuthError(null)
+      login().catch((err: Error) => setAuthError(err.message))
+      return
+    }
     setInput("")
     void sendMessage(trimmed)
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div className="flex h-12 items-center gap-2 border-b px-3 md:hidden">
+        <select
+          value={sessions.some((session) => session.session_id === sessionId) ? sessionId : ""}
+          onChange={(event) => {
+            if (event.target.value) void loadSession(event.target.value)
+          }}
+          disabled={!pubkey || isStreaming || isLoadingHistory}
+          aria-label="Conversation"
+          className="min-w-0 flex-1 truncate rounded-md border bg-background px-2 py-1.5 text-sm"
+        >
+          <option value="">New conversation</option>
+          {sessions.map((session) => (
+            <option key={session.session_id} value={session.session_id}>
+              {session.title}
+            </option>
+          ))}
+        </select>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={newSession}
+          disabled={isStreaming || isLoadingHistory}
+          aria-label="New conversation"
+        >
+          <Plus className="size-4" />
+        </Button>
+        {sessions.some((session) => session.session_id === sessionId) && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => void deleteSession(sessionId)}
+            disabled={isStreaming || isLoadingHistory}
+            aria-label="Delete conversation"
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        )}
+      </div>
+
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
+        {isLoadingHistory && messages.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" />
+          </div>
+        ) : messages.length === 0 ? (
           <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center gap-6 p-6 text-center">
             <div className="space-y-1.5">
               <h1 className="text-2xl font-semibold tracking-tight">Ask Sabio</h1>
@@ -65,6 +134,11 @@ export default function ChatPage() {
       </div>
 
       <div className="border-t px-6 py-4">
+        {(authError || sessionError) && (
+          <p className="mx-auto mb-2 max-w-3xl text-sm text-destructive">
+            {authError || sessionError}
+          </p>
+        )}
         <div className="mx-auto flex max-w-3xl items-end gap-2">
           <textarea
             value={input}
@@ -82,7 +156,7 @@ export default function ChatPage() {
           <Button
             size="icon"
             onClick={() => submit(input)}
-            disabled={!input.trim() || isStreaming}
+            disabled={!input.trim() || isStreaming || isLoadingHistory}
             className={cn(
               "rounded-full",
               input.trim() && "bg-sabio text-sabio-foreground hover:bg-sabio/90",
