@@ -117,7 +117,8 @@ def get_message(message_id: str) -> dict:
     """Fetch full content for a message, given a 'message:<id>' id from resolve()/search_messages()."""
     pk = message_id.removeprefix("message:")
     rows = run_query(
-        "SELECT id, author, email, title, body, url, posted_at, thread_id, person_id "
+        "SELECT id, channel, external_id, author, email, title, body, url, "
+        "posted_at, thread_id, person_id "
         "FROM messages WHERE id = %(pk)s",
         {"pk": pk},
     )
@@ -126,14 +127,16 @@ def get_message(message_id: str) -> dict:
     r = rows[0]
     return {
         "id": r[0],
-        "author": r[1],
-        "email": r[2],
-        "title": r[3],
-        "body": r[4],
-        "url": r[5],
-        "posted_at": r[6].isoformat() if r[6] else None,
-        "thread_id": r[7],
-        "person_id": r[8],
+        "channel": r[1],
+        "external_id": r[2],
+        "author": r[3],
+        "email": r[4],
+        "title": r[5],
+        "body": r[6],
+        "url": r[7],
+        "posted_at": r[8].isoformat() if r[8] else None,
+        "thread_id": r[9],
+        "person_id": r[10],
     }
 
 

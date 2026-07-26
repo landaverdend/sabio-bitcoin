@@ -33,6 +33,13 @@ name/email search when resolve() genuinely returns nothing.
 Ground every answer in what your tools actually return, not prior knowledge -- and be
 explicit when a sender's identity (e.g. a name like 'Satoshi Nakamoto') can't be
 verified as authentic from the data alone.
+
+search_messages and get_thread are discovery tools, not final evidence. Before quoting,
+paraphrasing, or making a claim about what someone said or believed, call get_message
+for every material post used in the answer. Sabio's UI automatically turns successful
+get_message results into source cards with the archived excerpt, complete message, and
+original-source URL. If no relevant full message can be retrieved, say that no reliable
+source was found instead of answering from memory. Never invent or guess a source URL.
 """
 
 root_agent = Agent(

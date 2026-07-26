@@ -43,7 +43,11 @@ def _signed_auth_event(private_key: PrivateKey, nonce: str) -> dict[str, Any]:
     return event.to_dict()
 
 
-def run(base_url: str, expect_source: bool = False) -> None:
+def run(
+    base_url: str,
+    expect_source: bool = False,
+    expect_communication_source: bool = False,
+) -> None:
     http = requests.Session()
     private_key = PrivateKey()
     pubkey = private_key.public_key.hex()
@@ -66,12 +70,18 @@ def run(base_url: str, expect_source: bool = False) -> None:
         assert _json(http.get(f"{base_url}/auth/me", timeout=10))["pubkey"] == pubkey
         print("✓ Nostr challenge login")
 
-        message = (
-            "In Bitcoin Core, read src/consensus/consensus.h lines 1-37 and briefly "
-            "explain the exact code that defines MAX_BLOCK_WEIGHT."
-            if expect_source
-            else "Reply exactly: Sabio session smoke test passed."
-        )
+        if expect_source:
+            message = (
+                "In Bitcoin Core, read src/consensus/consensus.h lines 1-37 and briefly "
+                "explain the exact code that defines MAX_BLOCK_WEIGHT."
+            )
+        elif expect_communication_source:
+            message = (
+                "What was Satoshi Nakamoto's take on libertarianism? Ground every "
+                "claim in full archived messages and retrieve each message you cite."
+            )
+        else:
+            message = "Reply exactly: Sabio session smoke test passed."
         response = http.post(
             f"{base_url}/chat/stream",
             json={"session_id": session_id, "message": message, "context": []},
@@ -101,6 +111,32 @@ def run(base_url: str, expect_source: bool = False) -> None:
                 for source in sources
             ), f"invalid source metadata: {sources!r}"
             print("✓ Live response includes exact-line GitHub source references")
+        if expect_communication_source:
+            communication_sources = [
+                event
+                for event in stream_events
+                if event["type"] == "communication_source"
+            ]
+            assert communication_sources, (
+                "the communication answer did not emit an archived-message source"
+            )
+            assert all(
+                source["source_url"].startswith(("http://", "https://"))
+                and source["message_id"].isdigit()
+                and source["excerpt"]
+                for source in communication_sources
+            ), f"invalid communication source metadata: {communication_sources!r}"
+            print("✓ Live response includes original communication sources")
+
+            detail = _json(
+                http.get(
+                    f"{base_url}/comms/messages/{communication_sources[0]['message_id']}",
+                    timeout=20,
+                )
+            )
+            assert detail["body"]
+            assert detail["url"] == communication_sources[0]["source_url"]
+            print("✓ Complete archived message loads through the side-panel API")
 
         sessions = _json(http.get(f"{base_url}/chat/sessions", timeout=20))
         summary = next(item for item in sessions if item["session_id"] == session_id)
@@ -128,6 +164,12 @@ def run(base_url: str, expect_source: bool = False) -> None:
         if expect_source:
             assert any(event["type"] == "source" for event in history["events"])
             print("✓ Source references survive history reload")
+        if expect_communication_source:
+            assert any(
+                event["type"] == "communication_source"
+                for event in history["events"]
+            )
+            print("✓ Communication sources survive history reload")
         print("✓ Stored history reloads")
 
         _json(http.delete(f"{base_url}/chat/sessions/{session_id}", timeout=20))
@@ -159,5 +201,16 @@ if __name__ == "__main__":
         action="store_true",
         help="Ask a real code question and require exact-line source events",
     )
+    parser.add_argument(
+        "--expect-communication-source",
+        action="store_true",
+        help="Ask a real archive question and require original-message sources",
+    )
     args = parser.parse_args()
-    run(args.base_url.rstrip("/"), expect_source=args.expect_source)
+    if args.expect_source and args.expect_communication_source:
+        parser.error("choose only one source smoke-test mode")
+    run(
+        args.base_url.rstrip("/"),
+        expect_source=args.expect_source,
+        expect_communication_source=args.expect_communication_source,
+    )

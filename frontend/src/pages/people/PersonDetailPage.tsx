@@ -6,19 +6,12 @@ import { ListSkeleton } from "@/components/ListRowSkeleton"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs"
+import { channelLabel } from "@/lib/channels"
 import { formatRelativeDate } from "@/lib/format-date"
 import { useRepoCommitPages, useRepoCommits } from "@/pages/code/hooks/use-repo-commits"
 import { PersonAvatar } from "@/pages/people/PersonAvatar"
 import { usePerson } from "@/pages/people/hooks/use-person"
 import { usePersonMessagePages } from "@/pages/people/hooks/use-person-messages"
-
-const CHANNEL_LABELS: Record<string, string> = {
-  bitcointalk: "BitcoinTalk",
-  mailing_list: "Mailing List",
-  cryptography: "Cryptography List",
-  "bitcoin-list": "bitcoin-list",
-  "p2p-research": "P2P Research",
-}
 
 const COMMITS_TAB = "commits"
 
@@ -74,7 +67,7 @@ export default function PersonDetailPage() {
       list.push({ key: COMMITS_TAB, label: "Commits", count: commitTotalForExistence })
     }
     for (const c of person.channels) {
-      list.push({ key: c.channel, label: CHANNEL_LABELS[c.channel] ?? c.channel, count: c.count })
+      list.push({ key: c.channel, label: channelLabel(c.channel), count: c.count })
     }
     return list
   }, [person, commitTotalForExistence])

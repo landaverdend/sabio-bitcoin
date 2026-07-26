@@ -23,10 +23,21 @@ export type SourceReference = {
   githubUrl: string
 }
 
+export type CommunicationReference = {
+  messageId: string
+  channel: string
+  author: string | null
+  title: string | null
+  postedAt: string | null
+  excerpt: string
+  sourceUrl: string
+}
+
 export type ChatBlock =
   | { type: "text"; text: string }
   | { type: "tool"; tool: string; label: string; icon: LucideIcon; calls: ToolCall[] }
   | { type: "source"; source: SourceReference }
+  | { type: "communication_source"; source: CommunicationReference }
 
 // A file or highlighted excerpt attached from the code panel -- content is
 // sent to the backend to be inlined directly into the model's prompt (see
@@ -133,6 +144,16 @@ type StreamEvent =
       end_line: number
       github_url: string
     }
+  | {
+      type: "communication_source"
+      message_id: string
+      channel: string
+      author: string | null
+      title: string | null
+      posted_at: string | null
+      excerpt: string
+      source_url: string
+    }
   | { type: "error"; message: string }
   | { type: "done" }
 
@@ -144,6 +165,20 @@ function sourceReference(event: Extract<StreamEvent, { type: "source" }>): Sourc
     startLine: event.start_line,
     endLine: event.end_line,
     githubUrl: event.github_url,
+  }
+}
+
+function communicationReference(
+  event: Extract<StreamEvent, { type: "communication_source" }>,
+): CommunicationReference {
+  return {
+    messageId: event.message_id,
+    channel: event.channel,
+    author: event.author,
+    title: event.title,
+    postedAt: event.posted_at,
+    excerpt: event.excerpt,
+    sourceUrl: event.source_url,
   }
 }
 
@@ -195,6 +230,11 @@ function reduceEvents(events: StreamEvent[]): ChatMessage[] {
       }
     } else if (event.type === "source") {
       blocks.push({ type: "source", source: sourceReference(event) })
+    } else if (event.type === "communication_source") {
+      blocks.push({
+        type: "communication_source",
+        source: communicationReference(event),
+      })
     }
     // tool_result: a completed session's calls are already known-done (see
     // `done: true` above) -- there's no in-flight state left to mark.
@@ -492,6 +532,11 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
               markLastToolDone()
             } else if (event.type === "source") {
               appendBlock({ type: "source", source: sourceReference(event) })
+            } else if (event.type === "communication_source") {
+              appendBlock({
+                type: "communication_source",
+                source: communicationReference(event),
+              })
             } else if (event.type === "error") {
               appendBlock({ type: "text", text: `\n\n*Something went wrong: ${event.message}*` })
             }

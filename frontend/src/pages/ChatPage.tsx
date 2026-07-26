@@ -1,5 +1,5 @@
 import { ArrowUp, Loader2, Plus, Square, Trash2 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -7,10 +7,14 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
+import { CommunicationSourcePanel } from "@/pages/chat/CommunicationSourcePanel"
 import { MessageBubble } from "@/pages/chat/MessageBubble"
 import { SourceCodePanel } from "@/pages/chat/SourceCodePanel"
 import { useAppChat } from "@/pages/chat/chat-context"
-import type { SourceReference } from "@/pages/chat/hooks/use-chat"
+import type {
+  CommunicationReference,
+  SourceReference,
+} from "@/pages/chat/hooks/use-chat"
 
 // Grounded in what Sabio can actually do (repos + comms tools) rather than
 // generic chatbot filler -- each one maps to a real, answerable query.
@@ -20,6 +24,23 @@ const STARTERS = [
   "Any open PRs worth a look?",
   "What's being discussed on the mailing list lately?",
 ]
+
+type SelectedEvidence =
+  | { kind: "code"; source: SourceReference }
+  | { kind: "communication"; source: CommunicationReference }
+
+function EvidencePanel({
+  selected,
+  onClose,
+}: {
+  selected: SelectedEvidence
+  onClose: () => void
+}) {
+  if (selected.kind === "code") {
+    return <SourceCodePanel source={selected.source} onClose={onClose} />
+  }
+  return <CommunicationSourcePanel source={selected.source} onClose={onClose} />
+}
 
 export default function ChatPage() {
   const { pubkey, login } = useAuth()
@@ -38,7 +59,7 @@ export default function ChatPage() {
   } = useAppChat()
   const [input, setInput] = useState("")
   const [authError, setAuthError] = useState<string | null>(null)
-  const [selectedSource, setSelectedSource] = useState<SourceReference | null>(null)
+  const [selectedEvidence, setSelectedEvidence] = useState<SelectedEvidence | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const isMobile = useIsMobile()
 
@@ -47,8 +68,16 @@ export default function ChatPage() {
   }, [messages])
 
   useEffect(() => {
-    setSelectedSource(null)
+    setSelectedEvidence(null)
   }, [sessionId])
+
+  const openCodeSource = useCallback((source: SourceReference) => {
+    setSelectedEvidence({ kind: "code", source })
+  }, [])
+
+  const openCommunicationSource = useCallback((source: CommunicationReference) => {
+    setSelectedEvidence({ kind: "communication", source })
+  }, [])
 
   const submit = (text: string) => {
     const trimmed = text.trim()
@@ -142,7 +171,8 @@ export default function ChatPage() {
               <MessageBubble
                 key={i}
                 message={message}
-                onOpenSource={setSelectedSource}
+                onOpenSource={openCodeSource}
+                onOpenCommunication={openCommunicationSource}
               />
             ))}
           </div>
@@ -201,9 +231,9 @@ export default function ChatPage() {
       <>
         {chatPane}
         <Sheet
-          open={selectedSource !== null}
+          open={selectedEvidence !== null}
           onOpenChange={(open) => {
-            if (!open) setSelectedSource(null)
+            if (!open) setSelectedEvidence(null)
           }}
         >
           <SheetContent
@@ -211,11 +241,11 @@ export default function ChatPage() {
             showCloseButton={false}
             className="w-[96vw] max-w-none gap-0 p-0"
           >
-            <SheetTitle className="sr-only">Referenced source code</SheetTitle>
-            {selectedSource && (
-              <SourceCodePanel
-                source={selectedSource}
-                onClose={() => setSelectedSource(null)}
+            <SheetTitle className="sr-only">Referenced evidence</SheetTitle>
+            {selectedEvidence && (
+              <EvidencePanel
+                selected={selectedEvidence}
+                onClose={() => setSelectedEvidence(null)}
               />
             )}
           </SheetContent>
@@ -229,18 +259,18 @@ export default function ChatPage() {
       <ResizablePanel id="main-chat" minSize={420}>
         {chatPane}
       </ResizablePanel>
-      {selectedSource && (
+      {selectedEvidence && (
         <>
           <ResizableHandle withHandle />
           <ResizablePanel
-            id="chat-source"
+            id="chat-evidence"
             defaultSize="44%"
             minSize={360}
             maxSize="65%"
           >
-            <SourceCodePanel
-              source={selectedSource}
-              onClose={() => setSelectedSource(null)}
+            <EvidencePanel
+              selected={selectedEvidence}
+              onClose={() => setSelectedEvidence(null)}
             />
           </ResizablePanel>
         </>

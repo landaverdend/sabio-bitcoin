@@ -113,7 +113,17 @@ def search_code(repo_name: str, query: str, max_results: int = 30) -> list[dict]
     repo = _resolve_repo(repo_name)
     max_results = min(max_results, 30)
     results = []
-    for hit in _get_client().search_code(f"{query} repo:{repo.full_name}"):
+    # fork:true -- GitHub's code search silently excludes forked repos from
+    # results by default (e.g. bitcoinknots/bitcoin, a real GitHub fork of
+    # bitcoin/bitcoin per repo.fork). Without this, search_code returns []
+    # for every query against a forked repo_name regardless of content.
+    # Conditional on repo.fork rather than always-on: empirically fork:true
+    # doesn't just "stop excluding forks" (as GitHub's docs for repository
+    # search read) -- for code search it restricts results to repos that
+    # ARE forks, so adding it unconditionally breaks every non-fork repo
+    # (bitcoin/bitcoin, fork:true -> 0 results, confirmed live).
+    qualifiers = f"repo:{repo.full_name}" + (" fork:true" if repo.fork else "")
+    for hit in _get_client().search_code(f"{query} {qualifiers}"):
         results.append({"path": hit.path, "url": hit.html_url})
         if len(results) >= max_results:
             break

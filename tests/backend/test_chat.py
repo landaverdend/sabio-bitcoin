@@ -151,6 +151,70 @@ def test_incomplete_read_file_result_does_not_render_broken_reference():
     }) is None
 
 
+def test_get_message_result_becomes_communication_source():
+    response = {
+        "id": 42,
+        "channel": "bitcointalk",
+        "external_id": "12345",
+        "author": "satoshi",
+        "email": None,
+        "title": "Re: Philosophy",
+        "body": "  A source-backed statement.\n\nWith useful context.  ",
+        "url": "https://bitcointalk.org/index.php?topic=1.msg42#msg42",
+        "posted_at": "2010-01-01T00:00:00+00:00",
+        "thread_id": "1",
+        "person_id": 1,
+    }
+    event = Event(
+        author="sabio_comms",
+        content=types.Content(
+            role="user",
+            parts=[types.Part.from_function_response(name="get_message", response=response)],
+        ),
+    )
+
+    assert chat._event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_comms",
+            "tool": "get_message",
+        },
+        {
+            "type": "communication_source",
+            "message_id": "42",
+            "channel": "bitcointalk",
+            "author": "satoshi",
+            "title": "Re: Philosophy",
+            "posted_at": "2010-01-01T00:00:00+00:00",
+            "excerpt": "A source-backed statement. With useful context.",
+            "source_url": response["url"],
+        },
+    ]
+
+
+def test_search_result_does_not_become_final_communication_source():
+    event = Event(
+        author="sabio_comms",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="search_messages",
+                    response={"result": [{"id": "message:42", "snippet": "not full evidence"}]},
+                )
+            ],
+        ),
+    )
+
+    assert chat._event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_comms",
+            "tool": "search_messages",
+        }
+    ]
+
+
 class _FakeSessionService:
     def __init__(self):
         self.sessions = [

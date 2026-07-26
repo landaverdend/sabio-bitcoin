@@ -29,6 +29,7 @@ export default defineConfig({
       // proxy rule would intercept it before Vite/React Router ever see it.
       "/chat/stream": "http://localhost:8010",
       "/chat/sessions": "http://localhost:8010",
+      "/comms": "http://localhost:8010",
       // /people and /people/:id are GET routes that exactly overlap the
       // frontend's own client-side page paths, unlike /repo or /chat/stream.
       // A plain proxy rule would send a hard reload of /people straight to

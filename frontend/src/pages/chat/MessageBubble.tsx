@@ -1,11 +1,14 @@
-import { Code2, ExternalLink, Loader2 } from "lucide-react"
+import { Code2, ExternalLink, Loader2, MessageSquareQuote } from "lucide-react"
 
 import { Markdown } from "@/components/Markdown"
+import { channelLabel } from "@/lib/channels"
+import { formatRelativeDate } from "@/lib/format-date"
 import { cn } from "@/lib/utils"
 import { ContextChip } from "@/pages/chat/ContextChip"
 import type {
   ChatBlock,
   ChatMessage,
+  CommunicationReference,
   SourceReference,
 } from "@/pages/chat/hooks/use-chat"
 
@@ -123,12 +126,80 @@ function SourceChip({
   )
 }
 
+function CommunicationSourceChip({
+  source,
+  onOpen,
+}: {
+  source: CommunicationReference
+  onOpen?: (source: CommunicationReference) => void
+}) {
+  const content = (
+    <>
+      <MessageSquareQuote className="mt-0.5 size-3.5 shrink-0 text-sabio" />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-medium text-foreground">
+            {source.author || "Unknown author"}
+          </span>
+          <span className="shrink-0 text-muted-foreground">
+            · {channelLabel(source.channel)} · {formatRelativeDate(source.postedAt)}
+          </span>
+        </span>
+        {source.title && (
+          <span className="mt-0.5 block truncate text-muted-foreground">
+            {source.title}
+          </span>
+        )}
+        <span className="mt-1 line-clamp-2 block text-muted-foreground">
+          “{source.excerpt}”
+        </span>
+      </span>
+    </>
+  )
+
+  return (
+    <div className="flex max-w-full items-stretch overflow-hidden rounded-lg border bg-muted/20 text-xs">
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={() => onOpen(source)}
+          className="flex min-w-0 flex-1 items-start gap-2 px-2.5 py-2 text-left hover:bg-accent"
+          title="Open archived message"
+        >
+          {content}
+        </button>
+      ) : (
+        <a
+          href={source.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex min-w-0 flex-1 items-start gap-2 px-2.5 py-2 hover:bg-accent"
+        >
+          {content}
+        </a>
+      )}
+      <a
+        href={source.sourceUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Open original communication source"
+        title="Open original source"
+        className="flex shrink-0 items-center border-l px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <ExternalLink className="size-3.5" />
+      </a>
+    </div>
+  )
+}
+
 export function MessageBubble({
   message,
   onOpenSource,
+  onOpenCommunication,
 }: {
   message: ChatMessage
   onOpenSource?: (source: SourceReference) => void
+  onOpenCommunication?: (source: CommunicationReference) => void
 }) {
   if (message.role === "user") {
     return (
@@ -162,6 +233,15 @@ export function MessageBubble({
           }
           if (block.type === "source") {
             return <SourceChip key={i} source={block.source} onOpen={onOpenSource} />
+          }
+          if (block.type === "communication_source") {
+            return (
+              <CommunicationSourceChip
+                key={i}
+                source={block.source}
+                onOpen={onOpenCommunication}
+              />
+            )
           }
           return <ToolChip key={i} block={block} />
         })}

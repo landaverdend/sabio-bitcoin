@@ -222,6 +222,43 @@ def _source_reference(response: dict) -> dict | None:
     }
 
 
+def _communication_reference(response: dict) -> dict | None:
+    """Build a citable archive reference from get_message's full result."""
+    message_id = response.get("id")
+    channel = response.get("channel")
+    body = response.get("body")
+    url = response.get("url")
+    if (
+        not isinstance(message_id, (int, str))
+        or isinstance(message_id, bool)
+        or not isinstance(channel, str)
+        or not isinstance(body, str)
+        or not isinstance(url, str)
+        or not url.startswith(("http://", "https://"))
+    ):
+        return None
+
+    compact_body = " ".join(body.split())
+    excerpt = compact_body[:360]
+    if len(compact_body) > len(excerpt):
+        excerpt += "…"
+
+    return {
+        "type": "communication_source",
+        "message_id": str(message_id),
+        "channel": channel,
+        "author": response.get("author") if isinstance(response.get("author"), str) else None,
+        "title": response.get("title") if isinstance(response.get("title"), str) else None,
+        "posted_at": (
+            response.get("posted_at")
+            if isinstance(response.get("posted_at"), str)
+            else None
+        ),
+        "excerpt": excerpt,
+        "source_url": url,
+    }
+
+
 def _event_payloads(event: Event) -> list[dict]:
     """Turns one ADK event into this app's own {type, ...} shape -- shared by
     the live SSE loop below and by the session-history endpoint, so a past
@@ -278,6 +315,10 @@ def _event_payloads(event: Event) -> list[dict]:
                 })
                 if part.function_response.name == "read_file":
                     source = _source_reference(part.function_response.response or {})
+                    if source is not None:
+                        payloads.append(source)
+                elif part.function_response.name == "get_message":
+                    source = _communication_reference(part.function_response.response or {})
                     if source is not None:
                         payloads.append(source)
         elif part.text:
