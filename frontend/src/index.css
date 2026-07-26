@@ -154,3 +154,10 @@
   font-style: italic;
   opacity: 0.7;
 }
+
+/* Applied by Monaco to the exact line range behind a Sabio source
+   reference. Kept subtle so the code stays readable in either theme. */
+.source-line-highlight {
+  background: color-mix(in oklab, var(--sabio-accent) 14%, transparent);
+  border-left: 2px solid var(--sabio-accent);
+}

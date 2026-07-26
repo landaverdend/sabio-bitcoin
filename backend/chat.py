@@ -190,6 +190,38 @@ def _legacy_display_text(text: str) -> str:
     return text.rsplit(separator, 1)[-1] if separator in text else text
 
 
+def _source_reference(response: dict) -> dict | None:
+    """Build the frontend's source-reference event from read_file's result.
+
+    Keeping this derived from the actual tool response, rather than parsing
+    paths or line numbers out of model-written Markdown, guarantees that
+    every rendered citation points to code the agent really inspected.
+    """
+    required = ("repo", "path", "ref", "start_line", "end_line", "github_url")
+    if not all(key in response for key in required):
+        return None
+    if not (
+        isinstance(response["repo"], str)
+        and isinstance(response["path"], str)
+        and isinstance(response["ref"], str)
+        and isinstance(response["start_line"], int)
+        and isinstance(response["end_line"], int)
+        and isinstance(response["github_url"], str)
+    ):
+        return None
+    if response["start_line"] < 1 or response["end_line"] < response["start_line"]:
+        return None
+    return {
+        "type": "source",
+        "repo": response["repo"],
+        "path": response["path"],
+        "ref": response["ref"],
+        "start_line": response["start_line"],
+        "end_line": response["end_line"],
+        "github_url": response["github_url"],
+    }
+
+
 def _event_payloads(event: Event) -> list[dict]:
     """Turns one ADK event into this app's own {type, ...} shape -- shared by
     the live SSE loop below and by the session-history endpoint, so a past
@@ -244,6 +276,10 @@ def _event_payloads(event: Event) -> list[dict]:
                 payloads.append({
                     "type": "tool_result", "author": event.author, "tool": part.function_response.name,
                 })
+                if part.function_response.name == "read_file":
+                    source = _source_reference(part.function_response.response or {})
+                    if source is not None:
+                        payloads.append(source)
         elif part.text:
             payloads.append({"type": "text", "author": event.author, "text": part.text})
     return payloads

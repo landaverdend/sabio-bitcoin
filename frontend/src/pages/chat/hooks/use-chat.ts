@@ -10,13 +10,23 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 export type ToolCall = { detail?: string; done: boolean }
+
+export type SourceReference = {
+  repo: string
+  path: string
+  ref: string
+  startLine: number
+  endLine: number
+  githubUrl: string
+}
 
 export type ChatBlock =
   | { type: "text"; text: string }
   | { type: "tool"; tool: string; label: string; icon: LucideIcon; calls: ToolCall[] }
+  | { type: "source"; source: SourceReference }
 
 // A file or highlighted excerpt attached from the code panel -- content is
 // sent to the backend to be inlined directly into the model's prompt (see
@@ -114,8 +124,28 @@ type StreamEvent =
   | { type: "handoff"; to: string }
   | { type: "tool_call"; author: string; tool: string; args: Record<string, unknown> }
   | { type: "tool_result"; author: string; tool: string }
+  | {
+      type: "source"
+      repo: string
+      path: string
+      ref: string
+      start_line: number
+      end_line: number
+      github_url: string
+    }
   | { type: "error"; message: string }
   | { type: "done" }
+
+function sourceReference(event: Extract<StreamEvent, { type: "source" }>): SourceReference {
+  return {
+    repo: event.repo,
+    path: event.path,
+    ref: event.ref,
+    startLine: event.start_line,
+    endLine: event.end_line,
+    githubUrl: event.github_url,
+  }
+}
 
 // Rebuilds a full message list from a stored session's event history in one
 // pass -- deliberately a separate pure fold rather than routing history
@@ -163,6 +193,8 @@ function reduceEvents(events: StreamEvent[]): ChatMessage[] {
         const { label, icon } = toolMeta(event.tool)
         blocks.push({ type: "tool", tool: event.tool, label, icon, calls: [call] })
       }
+    } else if (event.type === "source") {
+      blocks.push({ type: "source", source: sourceReference(event) })
     }
     // tool_result: a completed session's calls are already known-done (see
     // `done: true` above) -- there's no in-flight state left to mark.
@@ -206,6 +238,9 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
   const [isStreaming, setIsStreaming] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
+  // Not state -- aborting shouldn't itself trigger a re-render, only the
+  // isStreaming flip that follows it.
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Restore the most recently active conversation after auth resolves. A
   // pubkey change is a hard tenant boundary: clear the prior user's local
@@ -402,12 +437,15 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
         { role: "assistant", blocks: [] },
       ])
       setIsStreaming(true)
+      const controller = new AbortController()
+      abortControllerRef.current = controller
 
       try {
         const res = await fetch("/chat/stream", {
           method: "POST",
           credentials: "include", // the login (Nostr auth) session cookie
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             session_id: sessionId,
             message: text,
@@ -452,17 +490,25 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
               appendToolCall(event.tool, event.args)
             } else if (event.type === "tool_result") {
               markLastToolDone()
+            } else if (event.type === "source") {
+              appendBlock({ type: "source", source: sourceReference(event) })
             } else if (event.type === "error") {
               appendBlock({ type: "text", text: `\n\n*Something went wrong: ${event.message}*` })
             }
           }
         }
       } catch (err) {
-        appendBlock({
-          type: "text",
-          text: `\n\n*Something went wrong: ${err instanceof Error ? err.message : "unknown error"}*`,
-        })
+        // A user-initiated stop rejects the in-flight fetch/read with an
+        // AbortError -- that's the expected outcome of stopStreaming below,
+        // not a failure worth surfacing as "something went wrong".
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          appendBlock({
+            type: "text",
+            text: `\n\n*Something went wrong: ${err instanceof Error ? err.message : "unknown error"}*`,
+          })
+        }
       } finally {
+        abortControllerRef.current = null
         markLastToolDone()
         setIsStreaming(false)
         window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT))
@@ -471,11 +517,21 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
     [sessionId, appendBlock, appendToolCall, markLastToolDone],
   )
 
+  // Aborting the fetch also drops the underlying HTTP connection, which is
+  // enough on its own to stop the backend: Starlette detects the disconnect
+  // and cancels the streaming generator's task, so the agent run itself
+  // (further LLM calls, tool calls) stops rather than just the display of
+  // it -- no separate "/chat/stop" endpoint needed.
+  const stopStreaming = useCallback(() => {
+    abortControllerRef.current?.abort()
+  }, [])
+
   return {
     sessionId,
     sessions,
     messages,
     sendMessage,
+    stopStreaming,
     isStreaming,
     isLoadingHistory,
     sessionError,

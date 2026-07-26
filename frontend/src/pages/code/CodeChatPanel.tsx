@@ -1,4 +1,4 @@
-import { ArrowUp, X } from "lucide-react"
+import { ArrowUp, Square, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -35,7 +35,7 @@ export function CodeChatPanel({
   onAddFile,
 }: CodeChatPanelProps) {
   const { pubkey, login } = useAuth()
-  const { messages, sendMessage, isStreaming } = useChat(pubkey, false)
+  const { messages, sendMessage, stopStreaming, isStreaming } = useChat(pubkey, false)
   const [input, setInput] = useState("")
   const [authError, setAuthError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -119,14 +119,25 @@ export function CodeChatPanel({
             rows={1}
             className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-sabio/40 focus-visible:ring-3 focus-visible:ring-sabio/15"
           />
-          <Button
-            size="icon"
-            onClick={submit}
-            disabled={(!input.trim() && contextItems.length === 0) || isStreaming || hasPendingContext}
-            className={cn("rounded-full", input.trim() && "bg-sabio text-sabio-foreground hover:bg-sabio/90")}
-          >
-            <ArrowUp className="size-4" />
-          </Button>
+          {isStreaming ? (
+            <Button
+              size="icon"
+              onClick={stopStreaming}
+              className="rounded-full bg-sabio text-sabio-foreground hover:bg-sabio/90"
+              aria-label="Stop generating"
+            >
+              <Square className="size-3 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              onClick={submit}
+              disabled={(!input.trim() && contextItems.length === 0) || hasPendingContext}
+              className={cn("rounded-full", input.trim() && "bg-sabio text-sabio-foreground hover:bg-sabio/90")}
+            >
+              <ArrowUp className="size-4" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

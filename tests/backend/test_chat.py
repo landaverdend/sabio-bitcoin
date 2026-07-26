@@ -82,6 +82,75 @@ def test_legacy_history_hides_attached_prompt_envelope():
     assert chat._event_payloads(event)[0]["message"] == "What changed?"
 
 
+def test_read_file_result_becomes_interactive_source_reference():
+    response = {
+        "repo": "core",
+        "path": "src/validation.cpp",
+        "ref": "master",
+        "start_line": 100,
+        "end_line": 118,
+        "total_lines": 6200,
+        "content": "source",
+        "github_url": "https://github.com/bitcoin/bitcoin/blob/master/src/validation.cpp#L100-L118",
+    }
+    event = Event(
+        author="sabio_repos",
+        content=types.Content(
+            role="user",
+            parts=[types.Part.from_function_response(name="read_file", response=response)],
+        ),
+    )
+
+    assert chat._event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_repos",
+            "tool": "read_file",
+        },
+        {
+            "type": "source",
+            "repo": "core",
+            "path": "src/validation.cpp",
+            "ref": "master",
+            "start_line": 100,
+            "end_line": 118,
+            "github_url": response["github_url"],
+        },
+    ]
+
+
+def test_incomplete_read_file_result_does_not_render_broken_reference():
+    event = Event(
+        author="sabio_repos",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="read_file",
+                    response={"error": "file not found"},
+                )
+            ],
+        ),
+    )
+
+    assert chat._event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_repos",
+            "tool": "read_file",
+        }
+    ]
+
+    assert chat._source_reference({
+        "repo": "core",
+        "path": "short.cpp",
+        "ref": "master",
+        "start_line": 50,
+        "end_line": 49,
+        "github_url": "https://github.com/example",
+    }) is None
+
+
 class _FakeSessionService:
     def __init__(self):
         self.sessions = [

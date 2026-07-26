@@ -10,5 +10,7 @@ build/
 *.egg-info/
 .DS_Store
 repos/
+!agents/repos/
+!agents/repos/code_browser.py
 *.log
 .claude

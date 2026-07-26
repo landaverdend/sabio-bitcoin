@@ -43,7 +43,7 @@ def _signed_auth_event(private_key: PrivateKey, nonce: str) -> dict[str, Any]:
     return event.to_dict()
 
 
-def run(base_url: str) -> None:
+def run(base_url: str, expect_source: bool = False) -> None:
     http = requests.Session()
     private_key = PrivateKey()
     pubkey = private_key.public_key.hex()
@@ -66,7 +66,12 @@ def run(base_url: str) -> None:
         assert _json(http.get(f"{base_url}/auth/me", timeout=10))["pubkey"] == pubkey
         print("✓ Nostr challenge login")
 
-        message = "Reply exactly: Sabio session smoke test passed."
+        message = (
+            "In Bitcoin Core, read src/consensus/consensus.h lines 1-37 and briefly "
+            "explain the exact code that defines MAX_BLOCK_WEIGHT."
+            if expect_source
+            else "Reply exactly: Sabio session smoke test passed."
+        )
         response = http.post(
             f"{base_url}/chat/stream",
             json={"session_id": session_id, "message": message, "context": []},
@@ -87,10 +92,19 @@ def run(base_url: str) -> None:
         assert stream_events and stream_events[-1]["type"] == "done"
         assert any(event["type"] == "text" for event in stream_events)
         print("✓ Chat streamed through the Vite proxy")
+        if expect_source:
+            sources = [event for event in stream_events if event["type"] == "source"]
+            assert sources, "the code explanation did not emit a source reference"
+            assert all(
+                source["github_url"].startswith("https://github.com/")
+                and source["start_line"] <= source["end_line"]
+                for source in sources
+            ), f"invalid source metadata: {sources!r}"
+            print("✓ Live response includes exact-line GitHub source references")
 
         sessions = _json(http.get(f"{base_url}/chat/sessions", timeout=20))
         summary = next(item for item in sessions if item["session_id"] == session_id)
-        assert summary["title"] == message
+        assert summary["title"] == message[:80]
         print("✓ Session appears in the signed-in session list")
 
         history = _json(
@@ -111,6 +125,9 @@ def run(base_url: str) -> None:
             f"{[(event.get('type'), event.get('author'), event.get('text')) for event in history['events']]!r}"
         )
         assert any(event["type"] == "text" for event in history["events"])
+        if expect_source:
+            assert any(event["type"] == "source" for event in history["events"])
+            print("✓ Source references survive history reload")
         print("✓ Stored history reloads")
 
         _json(http.delete(f"{base_url}/chat/sessions/{session_id}", timeout=20))
@@ -137,5 +154,10 @@ if __name__ == "__main__":
         default="http://localhost:5173",
         help="Frontend origin whose API proxy should be tested",
     )
+    parser.add_argument(
+        "--expect-source",
+        action="store_true",
+        help="Ask a real code question and require exact-line source events",
+    )
     args = parser.parse_args()
-    run(args.base_url.rstrip("/"))
+    run(args.base_url.rstrip("/"), expect_source=args.expect_source)

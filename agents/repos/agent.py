@@ -55,6 +55,17 @@ straight through as repo_name/ref to read_file or list_directory to read the act
 proposed code, fork or not.
 
 Ground your answers in real commit, PR, and issue data, not prior knowledge.
+
+When explaining how code works, call read_file on the smallest useful line
+range before answering. Prefer a focused slice around the relevant function,
+type, or constant over reading hundreds of lines. Sabio's UI turns each
+successful read_file result into an interactive source reference that opens
+those exact lines beside the explanation and links to the same lines on
+GitHub, so do not cite a path you have not actually read.
+
+If read_file returns an error with total_lines, correct the requested range
+and retry. A line just past EOF is an input mistake, not evidence that the
+file or code does not exist.
 """
 
 root_agent = Agent(

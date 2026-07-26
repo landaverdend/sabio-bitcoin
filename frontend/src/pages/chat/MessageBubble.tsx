@@ -1,9 +1,13 @@
-import { Loader2 } from "lucide-react"
+import { Code2, ExternalLink, Loader2 } from "lucide-react"
 
 import { Markdown } from "@/components/Markdown"
 import { cn } from "@/lib/utils"
 import { ContextChip } from "@/pages/chat/ContextChip"
-import type { ChatBlock, ChatMessage } from "@/pages/chat/hooks/use-chat"
+import type {
+  ChatBlock,
+  ChatMessage,
+  SourceReference,
+} from "@/pages/chat/hooks/use-chat"
 
 // Small quiet monogram rather than a bot-in-a-circle icon -- Sabio is meant
 // to read as one collaborator with a consistent mark, not a generic
@@ -62,7 +66,70 @@ function ToolChip({ block }: { block: Extract<ChatBlock, { type: "tool" }> }) {
   )
 }
 
-export function MessageBubble({ message }: { message: ChatMessage }) {
+function SourceChip({
+  source,
+  onOpen,
+}: {
+  source: SourceReference
+  onOpen?: (source: SourceReference) => void
+}) {
+  const lines =
+    source.startLine === source.endLine
+      ? `L${source.startLine}`
+      : `L${source.startLine}–${source.endLine}`
+
+  const content = (
+    <>
+      <Code2 className="size-3.5 shrink-0 text-sabio" />
+      <span className="min-w-0 flex-1 truncate">
+        <span className="font-medium text-foreground">{source.path}</span>
+        <span className="ml-1.5 text-muted-foreground">{lines}</span>
+      </span>
+    </>
+  )
+
+  return (
+    <div className="flex max-w-full items-stretch overflow-hidden rounded-lg border bg-muted/20 text-xs">
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={() => onOpen(source)}
+          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left hover:bg-accent"
+          title={`Open ${source.path} at ${lines}`}
+        >
+          {content}
+        </button>
+      ) : (
+        <a
+          href={source.githubUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 hover:bg-accent"
+        >
+          {content}
+        </a>
+      )}
+      <a
+        href={source.githubUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Open ${source.path} on GitHub`}
+        title="Open on GitHub"
+        className="flex shrink-0 items-center border-l px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <ExternalLink className="size-3.5" />
+      </a>
+    </div>
+  )
+}
+
+export function MessageBubble({
+  message,
+  onOpenSource,
+}: {
+  message: ChatMessage
+  onOpenSource?: (source: SourceReference) => void
+}) {
   if (message.role === "user") {
     return (
       <div className="flex flex-col items-end gap-1.5">
@@ -85,15 +152,19 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
       <SabioMark />
       <div className="min-w-0 flex-1 space-y-2 pt-0.5">
         {message.blocks.length === 0 && <ThinkingDots />}
-        {message.blocks.map((block, i) =>
-          block.type === "text" ? (
-            <Markdown key={i} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-              {block.text}
-            </Markdown>
-          ) : (
-            <ToolChip key={i} block={block} />
-          ),
-        )}
+        {message.blocks.map((block, i) => {
+          if (block.type === "text") {
+            return (
+              <Markdown key={i} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                {block.text}
+              </Markdown>
+            )
+          }
+          if (block.type === "source") {
+            return <SourceChip key={i} source={block.source} onOpen={onOpenSource} />
+          }
+          return <ToolChip key={i} block={block} />
+        })}
       </div>
     </div>
   )

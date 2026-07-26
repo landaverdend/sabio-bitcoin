@@ -1,11 +1,16 @@
-import { ArrowUp, Loader2, Plus, Trash2 } from "lucide-react"
+import { ArrowUp, Loader2, Plus, Square, Trash2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { MessageBubble } from "@/pages/chat/MessageBubble"
+import { SourceCodePanel } from "@/pages/chat/SourceCodePanel"
 import { useAppChat } from "@/pages/chat/chat-context"
+import type { SourceReference } from "@/pages/chat/hooks/use-chat"
 
 // Grounded in what Sabio can actually do (repos + comms tools) rather than
 // generic chatbot filler -- each one maps to a real, answerable query.
@@ -23,6 +28,7 @@ export default function ChatPage() {
     sessions,
     messages,
     sendMessage,
+    stopStreaming,
     isStreaming,
     isLoadingHistory,
     sessionError,
@@ -32,11 +38,17 @@ export default function ChatPage() {
   } = useAppChat()
   const [input, setInput] = useState("")
   const [authError, setAuthError] = useState<string | null>(null)
+  const [selectedSource, setSelectedSource] = useState<SourceReference | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages])
+
+  useEffect(() => {
+    setSelectedSource(null)
+  }, [sessionId])
 
   const submit = (text: string) => {
     const trimmed = text.trim()
@@ -54,7 +66,7 @@ export default function ChatPage() {
     void sendMessage(trimmed)
   }
 
-  return (
+  const chatPane = (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex h-12 items-center gap-2 border-b px-3 md:hidden">
         <select
@@ -127,7 +139,11 @@ export default function ChatPage() {
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
             {messages.map((message, i) => (
-              <MessageBubble key={i} message={message} />
+              <MessageBubble
+                key={i}
+                message={message}
+                onOpenSource={setSelectedSource}
+              />
             ))}
           </div>
         )}
@@ -153,19 +169,82 @@ export default function ChatPage() {
             rows={1}
             className="max-h-40 min-h-10 flex-1 resize-none rounded-2xl border bg-transparent px-3.5 py-2.5 text-sm shadow-sm outline-none placeholder:text-muted-foreground focus-visible:border-sabio/40 focus-visible:ring-3 focus-visible:ring-sabio/15"
           />
-          <Button
-            size="icon"
-            onClick={() => submit(input)}
-            disabled={!input.trim() || isStreaming || isLoadingHistory}
-            className={cn(
-              "rounded-full",
-              input.trim() && "bg-sabio text-sabio-foreground hover:bg-sabio/90",
-            )}
-          >
-            <ArrowUp className="size-4" />
-          </Button>
+          {isStreaming ? (
+            <Button
+              size="icon"
+              onClick={stopStreaming}
+              className="rounded-full bg-sabio text-sabio-foreground hover:bg-sabio/90"
+              aria-label="Stop generating"
+            >
+              <Square className="size-3.5 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              onClick={() => submit(input)}
+              disabled={!input.trim() || isLoadingHistory}
+              className={cn(
+                "rounded-full",
+                input.trim() && "bg-sabio text-sabio-foreground hover:bg-sabio/90",
+              )}
+            >
+              <ArrowUp className="size-4" />
+            </Button>
+          )}
         </div>
       </div>
     </div>
+  )
+
+  if (isMobile) {
+    return (
+      <>
+        {chatPane}
+        <Sheet
+          open={selectedSource !== null}
+          onOpenChange={(open) => {
+            if (!open) setSelectedSource(null)
+          }}
+        >
+          <SheetContent
+            side="right"
+            showCloseButton={false}
+            className="w-[96vw] max-w-none gap-0 p-0"
+          >
+            <SheetTitle className="sr-only">Referenced source code</SheetTitle>
+            {selectedSource && (
+              <SourceCodePanel
+                source={selectedSource}
+                onClose={() => setSelectedSource(null)}
+              />
+            )}
+          </SheetContent>
+        </Sheet>
+      </>
+    )
+  }
+
+  return (
+    <ResizablePanelGroup orientation="horizontal" className="min-h-0">
+      <ResizablePanel id="main-chat" minSize={420}>
+        {chatPane}
+      </ResizablePanel>
+      {selectedSource && (
+        <>
+          <ResizableHandle withHandle />
+          <ResizablePanel
+            id="chat-source"
+            defaultSize="44%"
+            minSize={360}
+            maxSize="65%"
+          >
+            <SourceCodePanel
+              source={selectedSource}
+              onClose={() => setSelectedSource(null)}
+            />
+          </ResizablePanel>
+        </>
+      )}
+    </ResizablePanelGroup>
   )
 }
