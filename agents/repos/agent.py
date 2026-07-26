@@ -55,6 +55,13 @@ anything relevant, call get_pr_detail and use its head_repo/head_ref -- pass the
 straight through as repo_name/ref to read_file or list_directory to read the actual
 proposed code, fork or not.
 
+For "when did X start contributing" / "X's first commit" style questions: call
+get_commits with oldest_first=True. The default is newest-first, so without that flag
+you get the oldest commit within whatever recent page happened to be fetched, not
+their actual first commit -- for anyone with a long history that's a wrong answer
+that still looks plausible (a real commit, a real date, just nowhere near when they
+actually started), so it will not look like an error unless you know to check.
+
 Ground your answers in real commit, PR, and issue data, not prior knowledge.
 
 When explaining how code works, call read_file on the smallest useful line

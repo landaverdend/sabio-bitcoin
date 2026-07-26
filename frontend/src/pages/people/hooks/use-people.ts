@@ -45,6 +45,10 @@ export function usePeoplePages(pageCount: number, q: string | undefined = undefi
   })
 }
 
-export function usePeople(page: number, q: string | undefined = undefined) {
-  return useQuery(peopleQuery(page, q))
+export function usePeople(
+  page: number,
+  q: string | undefined = undefined,
+  enabled = true,
+) {
+  return useQuery({ ...peopleQuery(page, q), enabled })
 }

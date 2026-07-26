@@ -52,38 +52,38 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    --background: oklch(0.985 0.004 70);
+    --foreground: oklch(0.18 0.008 70);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.18 0.008 70);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.18 0.008 70);
+    --primary: oklch(0.205 0.008 70);
     --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.955 0.006 70);
+    --secondary-foreground: oklch(0.205 0.008 70);
+    --muted: oklch(0.955 0.006 70);
+    --muted-foreground: oklch(0.52 0.012 70);
+    --accent: oklch(0.955 0.009 70);
+    --accent-foreground: oklch(0.205 0.008 70);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --border: oklch(0.9 0.008 70);
+    --input: oklch(0.9 0.008 70);
+    --ring: oklch(0.66 0.16 48);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
+    --radius: 0.55rem;
+    --sidebar: oklch(0.965 0.007 70);
+    --sidebar-foreground: oklch(0.18 0.008 70);
+    --sidebar-primary: oklch(0.205 0.008 70);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar-accent: oklch(0.93 0.01 70);
+    --sidebar-accent-foreground: oklch(0.205 0.008 70);
+    --sidebar-border: oklch(0.89 0.009 70);
+    --sidebar-ring: oklch(0.66 0.16 48);
     /* Sabio's own accent -- warm copper, pulled from Bitcoin's own brand
        orange rather than an arbitrary pop color, and used sparingly (chat
        identity mark, focus states, active tool chips) rather than as a
@@ -93,37 +93,37 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
+    --background: oklch(0.145 0.006 70);
+    --foreground: oklch(0.965 0.004 70);
+    --card: oklch(0.18 0.007 70);
     --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
+    --popover: oklch(0.19 0.007 70);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
+    --primary: oklch(0.92 0.006 70);
+    --primary-foreground: oklch(0.18 0.008 70);
+    --secondary: oklch(0.235 0.008 70);
     --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
+    --muted: oklch(0.235 0.008 70);
+    --muted-foreground: oklch(0.68 0.01 70);
+    --accent: oklch(0.24 0.01 70);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --ring: oklch(0.72 0.15 50);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar: oklch(0.125 0.006 70);
+    --sidebar-foreground: oklch(0.95 0.004 70);
+    --sidebar-primary: oklch(0.72 0.15 50);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent: oklch(0.205 0.009 70);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar-ring: oklch(0.72 0.15 50);
     --sabio-accent: oklch(0.72 0.15 50);
     --sabio-accent-foreground: oklch(0.15 0 0);
 }
@@ -132,8 +132,30 @@
   * {
     @apply border-border outline-ring/50;
     }
+  button:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  summary,
+  label[for],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="menuitemcheckbox"]:not([aria-disabled="true"]),
+  [role="menuitemradio"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]) {
+    @apply cursor-pointer;
+    }
+  button:disabled,
+  select:disabled,
+  input[type="checkbox"]:disabled,
+  input[type="radio"]:disabled,
+  [aria-disabled="true"] {
+    @apply cursor-not-allowed;
+    }
   body {
     @apply bg-background text-foreground;
+    text-rendering: optimizeLegibility;
     }
   html {
     @apply font-sans;
@@ -144,6 +166,10 @@
     height: 100%;
     overflow: hidden;
     }
+}
+
+::selection {
+  background: color-mix(in oklab, var(--sabio-accent) 24%, transparent);
 }
 
 /* Monaco injects this class name directly via decoration render options

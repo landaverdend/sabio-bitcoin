@@ -26,10 +26,10 @@ frontend-install:
 	cd frontend && npm install
 
 db-up:
-	cd db && docker compose up -d
+	cd db && docker compose --env-file ../.env up -d
 
 db-down:
-	cd db && docker compose down
+	cd db && docker compose --env-file ../.env down
 
 migrate:
 	python3 db/migrate.py

@@ -4,6 +4,7 @@ import { Markdown } from "@/components/Markdown"
 import { channelLabel } from "@/lib/channels"
 import { formatRelativeDate } from "@/lib/format-date"
 import { cn } from "@/lib/utils"
+import { ChatAttachment } from "@/pages/chat/ChatAttachment"
 import { ContextChip } from "@/pages/chat/ContextChip"
 import type {
   ChatBlock,
@@ -219,15 +220,29 @@ export function MessageBubble({
   onOpenCommunication?: (source: CommunicationReference) => void
 }) {
   if (message.role === "user") {
+    const images = message.attachments?.filter((attachment) => attachment.kind === "image") ?? []
+    const references =
+      message.attachments?.filter((attachment) => attachment.kind !== "image") ?? []
+
     return (
       <div className="flex flex-col items-end gap-1.5">
+        {images.length > 0 && (
+          <div className="flex max-w-xl flex-wrap justify-end gap-2">
+            {images.map((attachment) => (
+              <ChatAttachment key={attachment.id} attachment={attachment} />
+            ))}
+          </div>
+        )}
         <p className="max-w-xl rounded-2xl bg-primary px-4 py-2.5 text-sm whitespace-pre-wrap text-primary-foreground">
           {message.text}
         </p>
-        {message.context && message.context.length > 0 && (
+        {((message.context && message.context.length > 0) || references.length > 0) && (
           <div className="flex max-w-xl flex-wrap justify-end gap-1.5">
-            {message.context.map((item) => (
+            {message.context?.map((item) => (
               <ContextChip key={item.id} item={item} tone="on-page" />
+            ))}
+            {references.map((attachment) => (
+              <ChatAttachment key={attachment.id} attachment={attachment} compact />
             ))}
           </div>
         )}

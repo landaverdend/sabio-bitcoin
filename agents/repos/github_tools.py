@@ -42,15 +42,31 @@ def _resolve_repo(repo_name: str):
     return _get_client().get_repo(slug)
 
 
-def get_commits(repo_name: str = "core", author: Optional[str] = None, max_count: int = 100) -> list[dict]:
-    """List commits, newest first. author is a GitHub login or the email a
-    commit was authored with (e.g. from resolve()) -- GitHub's API matches on
-    those, not an arbitrary name/pattern the way local `git log --author`
-    would."""
+def get_commits(
+    repo_name: str = "core", author: Optional[str] = None, max_count: int = 100,
+    oldest_first: bool = False,
+) -> list[dict]:
+    """List commits. author is a GitHub login or the email a commit was
+    authored with (e.g. from resolve()) -- GitHub's API matches on those, not
+    an arbitrary name/pattern the way local `git log --author` would.
+
+    GitHub's API itself only ever returns commits newest-first, so this
+    defaults to that; taking the last entry off a newest-first, max_count-
+    limited page is NOT that author's first commit, just the oldest one
+    within whatever page happened to be fetched -- for an active,
+    long-tenured contributor that's still a recent commit, arbitrarily far
+    from when they actually started. Pass oldest_first=True for "when did X
+    start" / "first commit" questions instead: this walks from the true end
+    of that author's history (via GitHub's own last-page link, not a forward
+    walk through everything in between) so the oldest max_count commits
+    returned are genuinely their earliest, not an artifact of pagination."""
     repo = _resolve_repo(repo_name)
     kwargs = {"author": author} if author else {}
+    result = repo.get_commits(**kwargs)
+    page = list(reversed(result))[:max_count] if oldest_first else result[:max_count]
+
     commits = []
-    for commit in repo.get_commits(**kwargs)[:max_count]:
+    for commit in page:
         git_author = commit.commit.author
         commits.append({
             "repo": repo_name,

@@ -1,7 +1,8 @@
 import { useEffect } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
+import { AppHeader } from "@/components/app-header"
 import { AppSidebar } from "@/components/app-sidebar"
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AuthProvider } from "@/lib/auth"
 import { DEFAULT_REPO } from "@/lib/repos"
@@ -28,9 +29,7 @@ function App() {
           <SidebarProvider>
             <AppSidebar />
             <SidebarInset>
-              <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-                <SidebarTrigger />
-              </header>
+              <AppHeader />
               <main className="min-h-0 min-w-0 flex-1">
                 <Routes>
                   <Route path="/" element={<Navigate to="/chat" replace />} />

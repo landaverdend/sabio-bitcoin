@@ -5,7 +5,7 @@ agents too, not comms-specific)."""
 import re
 from typing import Optional
 
-from agents.shared.resolve import run_query
+from agents.shared.resolve import MEMBER_IDS_CTE, run_query
 
 _MAX_RESULTS = 30
 _MAX_THREAD_MESSAGES = 50
@@ -44,7 +44,10 @@ def search_messages(
         "taproots"). Omit to just list by sender and/or date instead.
       person_id: scope to one resolved identity -- from a resolve() 'person:...'
         candidate. Preferred over author/email: it already covers that person's
-        known name-spelling variants.
+        known name-spelling variants, and expands to every row in their
+        canonical group (db/migrations/0008) -- a person split across a
+        GitHub-linked email row and a BitcoinTalk-only row still returns
+        messages attached to either.
       author, email: fallback sender scoping for senders resolve() doesn't
         cover (e.g. relay addresses) -- exact match on the raw message fields.
       after, before: ISO date strings (e.g. "2015-01-01"); inclusive of
@@ -58,6 +61,7 @@ def search_messages(
     q = (query or "").strip() or None
     params: dict = {"limit": max(1, min(int(limit or 10), _MAX_RESULTS))}
     filters: list[str] = []
+    cte = ""
 
     if q:
         filters.append("search_vector @@ websearch_to_tsquery('english', %(q)s)")
@@ -66,8 +70,9 @@ def search_messages(
     else:
         score_expr = "NULL::real"
     if person_id is not None:
-        filters.append("person_id = %(person_id)s")
-        params["person_id"] = person_id
+        cte = f"WITH {MEMBER_IDS_CTE}"
+        filters.append("person_id IN (SELECT id FROM member_ids)")
+        params["id"] = person_id
     if author:
         filters.append("author = %(author)s")
         params["author"] = author
@@ -90,6 +95,7 @@ def search_messages(
 
     where = " AND ".join(filters) if filters else "TRUE"
     sql = f"""
+{cte}
 SELECT id, title, author, email, person_id, posted_at, left(body, 200) AS snippet,
        {score_expr} AS score
 FROM messages

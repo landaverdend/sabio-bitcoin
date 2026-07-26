@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -26,6 +27,69 @@ def test_chat_request_requires_bounded_uuid_session():
                 for index in range(9)
             ],
         )
+
+
+def test_chat_request_validates_and_builds_multimodal_image_content():
+    raw = b"\x89PNG\r\n\x1a\n" + b"image-bytes"
+    data_url = f"data:image/png;base64,{base64.b64encode(raw).decode('ascii')}"
+    request = chat.ChatRequest(
+        session_id=uuid4(),
+        message="What is this?",
+        attachments=[
+            {
+                "kind": "image",
+                "name": "diagram.png",
+                "mime_type": "image/png",
+                "size": len(raw),
+                "data_url": data_url,
+            }
+        ],
+    )
+
+    content = chat._build_content(request.message, request.context, request.attachments)
+
+    assert len(content.parts) == 2
+    assert "attached 1 image" in content.parts[0].text
+    assert content.parts[1].inline_data.mime_type == "image/png"
+    assert content.parts[1].inline_data.data == raw
+
+    with pytest.raises(ValidationError):
+        chat.ChatRequest(
+            session_id=uuid4(),
+            message="bad image",
+            attachments=[
+                {
+                    "kind": "image",
+                    "name": "fake.png",
+                    "mime_type": "image/png",
+                    "size": 4,
+                    "data_url": "data:image/png;base64,ZmFrZQ==",
+                }
+            ],
+        )
+
+
+def test_repository_and_person_attachments_ground_the_prompt():
+    request = chat.ChatRequest(
+        session_id=uuid4(),
+        message="Compare their recent work",
+        attachments=[
+            {"kind": "repository", "repo_id": "core", "label": "Bitcoin Core"},
+            {
+                "kind": "person",
+                "person_id": 42,
+                "label": "Ada",
+                "github_username": "ada",
+            },
+        ],
+    )
+
+    prompt = chat._build_prompt(request.message, [], request.attachments)
+
+    assert "repo_name=core" in prompt
+    assert "person_id=42" in prompt
+    assert "GitHub @ada" in prompt
+    assert prompt.endswith("Compare their recent work")
 
 
 def test_history_uses_display_message_instead_of_generated_prompt():
@@ -66,8 +130,63 @@ def test_history_uses_display_message_instead_of_generated_prompt():
                     "content": "",
                 }
             ],
+            "attachments": [],
         }
     ]
+
+
+def test_history_reconstructs_image_and_entity_attachments():
+    raw = b"\x89PNG\r\n\x1a\n" + b"stored-image"
+    event = Event(
+        id="event-image",
+        invocation_id="invocation-image",
+        author="user",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part(text="Inspect this"),
+                types.Part.from_bytes(data=raw, mime_type="image/png"),
+            ],
+        ),
+        actions=EventActions(
+            state_delta={
+                chat._DISPLAY_MESSAGE_STATE_KEY: {
+                    "message": "Inspect this",
+                    "context": [],
+                    "attachments": [
+                        {
+                            "kind": "image",
+                            "name": "chart.png",
+                            "mime_type": "image/png",
+                            "size": len(raw),
+                        },
+                        {
+                            "kind": "repository",
+                            "repo_id": "core",
+                            "label": "Bitcoin Core",
+                        },
+                    ],
+                }
+            }
+        ),
+    )
+
+    payload = chat._event_payloads(event)[0]
+
+    assert payload["attachments"][0] == {
+        "id": "event-image:attachment:0",
+        "kind": "image",
+        "name": "chart.png",
+        "mimeType": "image/png",
+        "size": len(raw),
+        "dataUrl": f"data:image/png;base64,{base64.b64encode(raw).decode('ascii')}",
+    }
+    assert payload["attachments"][1] == {
+        "id": "event-image:attachment:1",
+        "kind": "repository",
+        "repoId": "core",
+        "label": "Bitcoin Core",
+    }
 
 
 def test_legacy_history_hides_attached_prompt_envelope():
@@ -325,3 +444,70 @@ def test_stream_reports_setup_errors_as_sse_and_always_finishes():
         {"type": "error", "message": "db down"},
         {"type": "done"},
     ]
+
+
+def test_stream_stop_cancels_the_pending_agent_event():
+    async def exercise():
+        started = asyncio.Event()
+        closed = asyncio.Event()
+        stop_event = asyncio.Event()
+        active_run_key = ("pubkey", str(uuid4()), str(uuid4()))
+
+        class WaitingRunner:
+            async def run_async(self, **_):
+                try:
+                    started.set()
+                    await asyncio.Event().wait()
+                    yield Event(author="root")
+                finally:
+                    closed.set()
+
+        chat._active_runs[active_run_key] = stop_event
+        with (
+            patch.object(chat, "_get_session_runtime", return_value=(object(), WaitingRunner())),
+            patch.object(chat, "_ensure_session", new=AsyncMock()),
+        ):
+            stream = chat._stream(
+                active_run_key[0],
+                active_run_key[1],
+                "hello",
+                [],
+                stop_event=stop_event,
+                active_run_key=active_run_key,
+            )
+            next_frame = asyncio.create_task(anext(stream))
+            await asyncio.wait_for(started.wait(), timeout=1)
+            stop_event.set()
+            with pytest.raises(StopAsyncIteration):
+                await asyncio.wait_for(next_frame, timeout=1)
+
+        assert closed.is_set()
+        assert active_run_key not in chat._active_runs
+
+    asyncio.run(exercise())
+
+
+def test_stop_chat_signals_only_the_addressed_run():
+    async def exercise():
+        pubkey = "pubkey"
+        session_id = uuid4()
+        run_id = uuid4()
+        active_key = (pubkey, str(session_id), str(run_id))
+        other_key = (pubkey, str(session_id), str(uuid4()))
+        active_stop = asyncio.Event()
+        other_stop = asyncio.Event()
+        chat._active_runs[active_key] = active_stop
+        chat._active_runs[other_key] = other_stop
+        try:
+            result = await chat.stop_chat(
+                chat.StopChatRequest(session_id=session_id, run_id=run_id),
+                pubkey,
+            )
+            assert result == {"stopped": True}
+            assert active_stop.is_set()
+            assert not other_stop.is_set()
+        finally:
+            chat._active_runs.pop(active_key, None)
+            chat._active_runs.pop(other_key, None)
+
+    asyncio.run(exercise())

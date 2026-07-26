@@ -3,6 +3,7 @@ import { useState } from "react"
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
 
 import { NostrAuthButton } from "@/components/nostr-auth-button"
+import { SabioMark } from "@/components/sabio-mark"
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
   Sidebar,
@@ -75,14 +76,16 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <span className="truncate px-2 py-1 text-sm font-semibold text-sabio group-data-[collapsible=icon]:hidden">
-          Sabio
-        </span>
+      <SidebarHeader className="h-12 justify-center border-b p-2">
+        <div className="flex items-center gap-2 px-0.5">
+          <SabioMark className="size-6 shrink-0" />
+          <p className="truncate text-sm font-semibold group-data-[collapsible=icon]:hidden">
+            Sabio
+          </p>
+        </div>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Navigate</SidebarGroupLabel>
+        <SidebarGroup className="pt-2">
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => (

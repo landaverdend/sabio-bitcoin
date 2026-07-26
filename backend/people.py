@@ -15,6 +15,7 @@ not N confusingly duplicate entries."""
 
 from fastapi import APIRouter, HTTPException
 
+from agents.shared.resolve import MEMBER_IDS_CTE as _MEMBER_IDS_CTE
 from agents.shared.resolve import run_query
 
 router = APIRouter(prefix="/people", tags=["people"])
@@ -33,17 +34,11 @@ _GROUP_CTE = """
     )
 """
 
-# Same grouping, scoped to a single :id's group via a root lookup -- used by
-# get_person and get_person_messages, which start from one person_id rather
-# than listing every group like list_people does.
-_MEMBER_IDS_CTE = """
-    root AS (
-        SELECT coalesce(canonical_person_id, id) AS root_id FROM people WHERE id = %(id)s
-    ),
-    member_ids AS (
-        SELECT id FROM people, root WHERE people.id = root.root_id OR people.canonical_person_id = root.root_id
-    )
-"""
+# _MEMBER_IDS_CTE (scoped to a single :id's group via a root lookup, used by
+# get_person and get_person_messages below) now lives in agents/shared/
+# resolve.py -- comms' search_messages(person_id=...) needed the exact same
+# "which rows count as this person" lookup, so a third near-identical copy
+# would've just been more places for the two definitions to drift apart.
 
 
 def _merge_field(rows: list[tuple], col_index: int):

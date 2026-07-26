@@ -28,6 +28,21 @@ _EXACT_NAME_SCORE = 0.9
 _FUZZY_WEIGHT = 0.6
 _MAX_RESULTS = 30
 
+# Every row in the same canonical-person group as a given id
+# (db/migrations/0008), root row (canonical_person_id IS NULL) included --
+# shared by every caller that needs "which people rows count as this one
+# person" starting from a single id: backend/people.py's endpoints and
+# comms' search_messages(person_id=...) both need exactly this, so it lives
+# here once instead of near-identical copies drifting apart.
+MEMBER_IDS_CTE = """
+    root AS (
+        SELECT coalesce(canonical_person_id, id) AS root_id FROM people WHERE id = %(id)s
+    ),
+    member_ids AS (
+        SELECT id FROM people, root WHERE people.id = root.root_id OR people.canonical_person_id = root.root_id
+    )
+"""
+
 
 @dataclass(frozen=True)
 class _Entity:
@@ -62,7 +77,7 @@ _ENTITIES = (
                         "coalesce(email, bitcointalk_username, github_username, '(no contact)')",
             exact_cols=("email", "bitcointalk_username", "github_username"),
             fuzzy_cols=("display_name", "email", "bitcointalk_username", "github_username"),
-            extra_cols=("email", "bitcointalk_username", "github_username")),
+            extra_cols=("email", "bitcointalk_username", "github_username", "canonical_person_id")),
 )
 
 
@@ -180,6 +195,16 @@ def run_query(sql: str, params: dict) -> list[tuple]:
             put_pooled_connection(conn, discard=not healthy)
 
 
+def _first_non_null(rows: list[tuple], col_index: int):
+    """First non-null value at col_index across a group's member rows, root
+    row (people.id == the group's root_id) preferred -- rows must already be
+    sorted root-first, same convention as backend/people.py's _merge_field."""
+    for row in rows:
+        if row[col_index] is not None:
+            return row[col_index]
+    return None
+
+
 def resolve(query: str, limit: int = 10) -> list[dict]:
     """Find the person a human name, email, BitcoinTalk username, or GitHub
     username might refer to.
@@ -194,25 +219,69 @@ def resolve(query: str, limit: int = 10) -> list[dict]:
     confirmed as linked to a commit email) -- check before using one to
     filter another tool (e.g. comms' search_messages, git commits by author
     email, or a GitHub PR search by author).
+
+    A real person can have more than one row (db/migrations/0008 -- a
+    GitHub-linked email row and a BitcoinTalk-only row have no column to
+    auto-join on, so both can independently match the same query) -- when
+    that happens this returns one merged candidate for the group instead of
+    several fragments, with email/bitcointalk_username/github_username
+    filled in from whichever row in the group actually has each one.
     """
     q = (query or "").strip()
     if not q:
         return []
+    lim = max(1, min(int(limit or 10), _MAX_RESULTS))
     rows = run_query(_RESOLVE_SQL, {
         "q": q.lower(),
         "raw_q": q,
         "exact_name_score": _EXACT_NAME_SCORE,
         "fuzzy_weight": _FUZZY_WEIGHT,
-        "limit": max(1, min(int(limit or 10), _MAX_RESULTS)),
+        # Always the hard ceiling, not just this call's own limit -- rows get
+        # merged into fewer canonical-group candidates below, so truncating
+        # before merging could drop a genuinely distinct match to make room
+        # for a duplicate of one already kept.
+        "limit": _MAX_RESULTS,
     })
+    if not rows:
+        return []
+
+    best_score: dict[int, float] = {}
+    root_order: list[int] = []
+    for id_, _type, _label, score, *_extra, canonical_person_id in rows:
+        root_id = canonical_person_id or int(id_.partition(":")[2])
+        if root_id not in best_score:
+            root_order.append(root_id)
+        best_score[root_id] = max(best_score.get(root_id, 0.0), float(score))
+
+    group_rows = run_query(
+        """
+        SELECT id, canonical_person_id, display_name, email, bitcointalk_username, github_username
+        FROM people
+        WHERE id = ANY(%(roots)s) OR canonical_person_id = ANY(%(roots)s)
+        """,
+        {"roots": root_order},
+    )
+    members: dict[int, list[tuple]] = {}
+    for member_row in group_rows:
+        root_id = member_row[1] or member_row[0]
+        members.setdefault(root_id, []).append(member_row)
+    for member_rows in members.values():
+        member_rows.sort(key=lambda r: r[1] is not None)  # root row (canonical_person_id IS NULL) first
+
     candidates = []
-    for id_, type_, label, score, email, bitcointalk_username, github_username in rows:
+    for root_id in sorted(root_order, key=lambda r: -best_score[r])[:lim]:
+        member_rows = members.get(root_id, [])
+        display_name = _first_non_null(member_rows, 2)
+        email = _first_non_null(member_rows, 3)
+        bitcointalk_username = _first_non_null(member_rows, 4)
+        github_username = _first_non_null(member_rows, 5)
         candidates.append({
-            "id": id_,
-            "type": type_,
-            "label": label,
-            "score": round(float(score), 3),
-            "person_id": int(id_.partition(":")[2]),
+            "id": f"person:{root_id}",
+            "type": "person",
+            "label": f"{display_name or '(unknown)'} -- "
+                     f"{email or bitcointalk_username or github_username or '(no contact)'}",
+            "score": round(best_score[root_id], 3),
+            "person_id": root_id,
             "email": email,
             "bitcointalk_username": bitcointalk_username,
             "github_username": github_username,

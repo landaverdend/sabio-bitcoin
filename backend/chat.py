@@ -7,10 +7,13 @@ being an import-time side effect nobody knows about.
 """
 
 import asyncio
+import base64
+import binascii
 import json
 import os
 from collections.abc import AsyncIterator
-from uuid import UUID
+from typing import Annotated, Literal
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -19,7 +22,7 @@ from google.adk.events.event_actions import EventActions
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, DatabaseSessionService
 from google.genai import types
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 
 from agents.root.agent import root_agent
@@ -32,6 +35,9 @@ _MAX_SESSIONS_PER_PUBKEY = 20  # oldest (by last_update_time) evicted past this
 _TITLE_CHARS = 80
 _CONTEXT_ITEM_CHARS = 8000
 _DISPLAY_MESSAGE_STATE_KEY = "_sabio_display_message"
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_MAX_IMAGES = 4
+_MAX_ATTACHMENTS = 8
 
 # Constructing DatabaseSessionService in pinned ADK 1.13 calls create_all().
 # Keep that out of module import so test collection, CLI introspection, and
@@ -45,6 +51,12 @@ _runner: Runner | None = None
 # interleaving events. Database uniqueness remains the cross-worker backstop.
 _session_locks: dict[tuple[str, str], asyncio.Lock] = {}
 _session_locks_guard = asyncio.Lock()
+
+# A browser disconnect should cancel a StreamingResponse, but relying on that
+# transport detail alone is brittle (proxies may buffer, and an agent may be
+# awaiting an LLM call when the socket closes). Each submitted turn therefore
+# gets an explicit stop signal addressed by its run id.
+_active_runs: dict[tuple[str, str, str], asyncio.Event] = {}
 
 
 def _get_session_runtime() -> tuple[DatabaseSessionService, Runner]:
@@ -63,6 +75,9 @@ def _get_session_runtime() -> tuple[DatabaseSessionService, Runner]:
 def close_session_storage() -> None:
     """Dispose pooled DB connections during app shutdown."""
     global _runner, _session_service
+    for stop_event in _active_runs.values():
+        stop_event.set()
+    _active_runs.clear()
     if _session_service is not None:
         _session_service.db_engine.dispose()
     _session_service = None
@@ -94,26 +109,163 @@ class ContextItem(BaseModel):
     content: str = Field(max_length=250_000)
 
 
+def _decode_image_data(data_url: str, mime_type: str) -> bytes:
+    prefix = f"data:{mime_type};base64,"
+    if not data_url.startswith(prefix):
+        raise ValueError("image data URL does not match its MIME type")
+    try:
+        raw = base64.b64decode(data_url[len(prefix):], validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("image data is not valid base64") from exc
+    if not raw:
+        raise ValueError("image cannot be empty")
+    if len(raw) > _MAX_IMAGE_BYTES:
+        raise ValueError("image is larger than 5 MB")
+
+    signatures = {
+        "image/jpeg": raw.startswith(b"\xff\xd8\xff"),
+        "image/png": raw.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/gif": raw.startswith((b"GIF87a", b"GIF89a")),
+        "image/webp": len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WEBP",
+    }
+    if not signatures.get(mime_type, False):
+        raise ValueError("image bytes do not match the declared MIME type")
+    return raw
+
+
+class ImageAttachment(BaseModel):
+    kind: Literal["image"]
+    name: str = Field(min_length=1, max_length=255)
+    mime_type: Literal["image/jpeg", "image/png", "image/webp", "image/gif"]
+    size: int = Field(gt=0, le=_MAX_IMAGE_BYTES)
+    data_url: str = Field(max_length=7_100_000)
+
+    @model_validator(mode="after")
+    def validate_image(self):
+        raw = _decode_image_data(self.data_url, self.mime_type)
+        if len(raw) != self.size:
+            raise ValueError("image size does not match its data")
+        return self
+
+
+class RepositoryAttachment(BaseModel):
+    kind: Literal["repository"]
+    repo_id: Literal["core", "knots", "bips", "secp256k1"]
+    label: str = Field(min_length=1, max_length=120)
+
+
+class PersonAttachment(BaseModel):
+    kind: Literal["person"]
+    person_id: int = Field(gt=0)
+    label: str = Field(min_length=1, max_length=200)
+    github_username: str | None = Field(default=None, max_length=100)
+    bitcointalk_username: str | None = Field(default=None, max_length=100)
+
+
+ChatAttachment = Annotated[
+    ImageAttachment | RepositoryAttachment | PersonAttachment,
+    Field(discriminator="kind"),
+]
+
+
 class ChatRequest(BaseModel):
     session_id: UUID
+    run_id: UUID = Field(default_factory=uuid4)
     message: str = Field(min_length=1, max_length=16_000)
     context: list[ContextItem] = Field(default_factory=list, max_length=8)
+    attachments: list[ChatAttachment] = Field(
+        default_factory=list,
+        max_length=_MAX_ATTACHMENTS,
+    )
+
+    @model_validator(mode="after")
+    def validate_attachment_counts(self):
+        image_count = sum(
+            isinstance(attachment, ImageAttachment)
+            for attachment in self.attachments
+        )
+        if image_count > _MAX_IMAGES:
+            raise ValueError(f"at most {_MAX_IMAGES} images can be attached")
+        return self
 
 
 class RenameSessionRequest(BaseModel):
     title: str = Field(min_length=1, max_length=_TITLE_CHARS)
 
 
-def _build_prompt(message: str, context: list[ContextItem]) -> str:
-    if not context:
+class StopChatRequest(BaseModel):
+    session_id: UUID
+    run_id: UUID
+
+
+def _build_prompt(
+    message: str,
+    context: list[ContextItem],
+    attachments: list[ChatAttachment] | None = None,
+) -> str:
+    attachments = attachments or []
+    reference_blocks = []
+    for attachment in attachments:
+        if isinstance(attachment, RepositoryAttachment):
+            reference_blocks.append(
+                f"- Repository: {attachment.label} (`repo_name={attachment.repo_id}`)"
+            )
+        elif isinstance(attachment, PersonAttachment):
+            identities = []
+            if attachment.github_username:
+                identities.append(f"GitHub @{attachment.github_username}")
+            if attachment.bitcointalk_username:
+                identities.append(f"BitcoinTalk {attachment.bitcointalk_username}")
+            identity_text = f"; known as {', '.join(identities)}" if identities else ""
+            reference_blocks.append(
+                f"- Person: {attachment.label} (`person_id={attachment.person_id}`{identity_text})"
+            )
+
+    image_count = sum(isinstance(attachment, ImageAttachment) for attachment in attachments)
+    if not context and not reference_blocks and image_count == 0:
         return message
 
     blocks = []
     for item in context:
-        where = f"{item.path} (lines {item.start_line}-{item.end_line})" if item.start_line else item.path
+        where = (
+            f"{item.path} (lines {item.start_line}-{item.end_line})"
+            if item.start_line
+            else item.path
+        )
         blocks.append(f"### {where}\n```\n{item.content[:_CONTEXT_ITEM_CHARS]}\n```")
 
-    return "Attached context:\n\n" + "\n\n".join(blocks) + "\n\n---\n\n" + message
+    prompt_parts = []
+    if blocks:
+        prompt_parts.append("Attached code context:\n\n" + "\n\n".join(blocks))
+    if reference_blocks:
+        prompt_parts.append(
+            "Selected Sabio context (use these exact repository/person identifiers when "
+            "calling tools):\n" + "\n".join(reference_blocks)
+        )
+    if image_count:
+        prompt_parts.append(
+            f"The user attached {image_count} image{'s' if image_count != 1 else ''}. "
+            "Inspect the image content directly when answering."
+        )
+
+    return "\n\n".join(prompt_parts) + "\n\n---\n\n" + message
+
+
+def _build_content(
+    message: str,
+    context: list[ContextItem],
+    attachments: list[ChatAttachment],
+) -> types.Content:
+    parts = [types.Part(text=_build_prompt(message, context, attachments))]
+    for attachment in attachments:
+        if isinstance(attachment, ImageAttachment):
+            parts.append(
+                types.Part.from_bytes(
+                    data=_decode_image_data(attachment.data_url, attachment.mime_type),
+                    mime_type=attachment.mime_type,
+                )
+            )
+    return types.Content(role="user", parts=parts)
 
 
 def _sse(payload: dict) -> str:
@@ -169,13 +321,41 @@ async def _ensure_session(
             )
 
 
-def _display_message(message: str, context: list[ContextItem]) -> dict:
+def _display_message(
+    message: str,
+    context: list[ContextItem],
+    attachments: list[ChatAttachment] | None = None,
+) -> dict:
     """Small user-facing copy attached to the persisted ADK user event.
 
     The actual event content is the model prompt, which includes full source
     excerpts. This metadata lets history reconstruct the original bubble and
     context chips without showing that generated prompt envelope.
     """
+    attachment_metadata = []
+    for attachment in attachments or []:
+        if isinstance(attachment, ImageAttachment):
+            attachment_metadata.append({
+                "kind": "image",
+                "name": attachment.name,
+                "mime_type": attachment.mime_type,
+                "size": attachment.size,
+            })
+        elif isinstance(attachment, RepositoryAttachment):
+            attachment_metadata.append({
+                "kind": "repository",
+                "repo_id": attachment.repo_id,
+                "label": attachment.label,
+            })
+        elif isinstance(attachment, PersonAttachment):
+            attachment_metadata.append({
+                "kind": "person",
+                "person_id": attachment.person_id,
+                "label": attachment.label,
+                "github_username": attachment.github_username,
+                "bitcointalk_username": attachment.bitcointalk_username,
+            })
+
     return {
         "message": message,
         "context": [
@@ -186,6 +366,10 @@ def _display_message(message: str, context: list[ContextItem]) -> dict:
             }
             for item in context
         ],
+        # Image bytes already live in the persisted ADK content parts. Keep
+        # only small display metadata here so session state does not duplicate
+        # several megabytes of base64 for every image.
+        "attachments": attachment_metadata,
     }
 
 
@@ -193,6 +377,56 @@ def _legacy_display_text(text: str) -> str:
     """Recover the visible message from sessions created before metadata."""
     separator = "\n\n---\n\n"
     return text.rsplit(separator, 1)[-1] if separator in text else text
+
+
+def _history_attachments(event: Event, display: dict) -> list[dict]:
+    image_parts = [
+        part.inline_data
+        for part in (event.content.parts if event.content else [])
+        if part.inline_data and part.inline_data.data and part.inline_data.mime_type
+    ]
+    image_index = 0
+    attachments = []
+
+    for index, item in enumerate(display.get("attachments", [])):
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind")
+        attachment_id = f"{event.id}:attachment:{index}"
+        if kind == "image":
+            if image_index >= len(image_parts):
+                continue
+            image = image_parts[image_index]
+            image_index += 1
+            attachments.append({
+                "id": attachment_id,
+                "kind": "image",
+                "name": item.get("name") or "Attached image",
+                "mimeType": image.mime_type,
+                "size": len(image.data),
+                "dataUrl": (
+                    f"data:{image.mime_type};base64,"
+                    f"{base64.b64encode(image.data).decode('ascii')}"
+                ),
+            })
+        elif kind == "repository" and item.get("repo_id") and item.get("label"):
+            attachments.append({
+                "id": attachment_id,
+                "kind": "repository",
+                "repoId": item["repo_id"],
+                "label": item["label"],
+            })
+        elif kind == "person" and item.get("person_id") and item.get("label"):
+            attachments.append({
+                "id": attachment_id,
+                "kind": "person",
+                "personId": item["person_id"],
+                "label": item["label"],
+                "githubUsername": item.get("github_username"),
+                "bitcointalkUsername": item.get("bitcointalk_username"),
+            })
+
+    return attachments
 
 
 def _source_reference(response: dict) -> dict | None:
@@ -317,12 +551,18 @@ def _event_payloads(event: Event) -> list[dict]:
                 "type": "user_message",
                 "message": display["message"],
                 "context": context,
+                "attachments": _history_attachments(event, display),
             }]
 
         # Backward compatibility for already-persisted sessions.
         if event.content and event.content.parts:
             text = "".join(part.text or "" for part in event.content.parts)
-            return [{"type": "user_message", "message": _legacy_display_text(text), "context": []}]
+            return [{
+                "type": "user_message",
+                "message": _legacy_display_text(text),
+                "context": [],
+                "attachments": [],
+            }]
         return []
 
     if not event.content or not event.content.parts:
@@ -363,37 +603,139 @@ def _event_payloads(event: Event) -> list[dict]:
     return payloads
 
 
-async def _stream(pubkey: str, session_id: str, message: str, context: list[ContextItem]) -> AsyncIterator[str]:
+async def _stream(
+    pubkey: str,
+    session_id: str,
+    message: str,
+    context: list[ContextItem],
+    attachments: list[ChatAttachment] | None = None,
+    stop_event: asyncio.Event | None = None,
+    active_run_key: tuple[str, str, str] | None = None,
+) -> AsyncIterator[str]:
+    attachments = attachments or []
+    stop_event = stop_event or asyncio.Event()
     service, runner = _get_session_runtime()
     lock = await _get_session_lock(pubkey, session_id)
+    events = None
+    next_event_task = None
+    stop_task = None
     try:
         async with lock:
+            if stop_event.is_set():
+                return
             await _ensure_session(service, pubkey, session_id, message)
-            prompt = _build_prompt(message, context)
-            content = types.Content(role="user", parts=[types.Part(text=prompt)])
-            state_delta = {_DISPLAY_MESSAGE_STATE_KEY: _display_message(message, context)}
+            if stop_event.is_set():
+                return
+            content = _build_content(message, context, attachments)
+            state_delta = {
+                _DISPLAY_MESSAGE_STATE_KEY: _display_message(
+                    message,
+                    context,
+                    attachments,
+                )
+            }
 
-            async for event in runner.run_async(
+            events = runner.run_async(
                 user_id=pubkey,
                 session_id=session_id,
                 new_message=content,
                 state_delta=state_delta,
-            ):
+            ).__aiter__()
+
+            while not stop_event.is_set():
+                next_event_task = asyncio.create_task(anext(events))
+                stop_task = asyncio.create_task(stop_event.wait())
+                completed, _ = await asyncio.wait(
+                    {next_event_task, stop_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if stop_task in completed:
+                    next_event_task.cancel()
+                    await asyncio.gather(next_event_task, return_exceptions=True)
+                    next_event_task = None
+                    stop_task = None
+                    break
+
+                stop_task.cancel()
+                await asyncio.gather(stop_task, return_exceptions=True)
+                stop_task = None
+                try:
+                    event = next_event_task.result()
+                except StopAsyncIteration:
+                    next_event_task = None
+                    break
+                next_event_task = None
+
                 for payload in _event_payloads(event):
+                    if stop_event.is_set():
+                        break
                     yield _sse(payload)
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        yield _sse({"type": "error", "message": str(exc)})
+        if not stop_event.is_set():
+            yield _sse({"type": "error", "message": str(exc)})
     finally:
+        pending_tasks = [
+            task
+            for task in (next_event_task, stop_task)
+            if task is not None and not task.done()
+        ]
+        for task in pending_tasks:
+            task.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+        if events is not None:
+            close_events = getattr(events, "aclose", None)
+            if close_events is not None:
+                await close_events()
+
+        if (
+            active_run_key is not None
+            and _active_runs.get(active_run_key) is stop_event
+        ):
+            _active_runs.pop(active_run_key, None)
+
+    if not stop_event.is_set():
         yield _sse({"type": "done"})
 
 
 @router.post("/stream")
 async def stream_chat(req: ChatRequest, pubkey: str = Depends(get_current_pubkey)) -> StreamingResponse:
     session_id = str(req.session_id)
+    run_id = str(req.run_id)
+    active_run_key = (pubkey, session_id, run_id)
+    stop_event = asyncio.Event()
+    previous = _active_runs.get(active_run_key)
+    if previous is not None:
+        previous.set()
+    _active_runs[active_run_key] = stop_event
     return StreamingResponse(
-        _stream(pubkey, session_id, req.message, req.context),
+        _stream(
+            pubkey,
+            session_id,
+            req.message,
+            req.context,
+            req.attachments,
+            stop_event,
+            active_run_key,
+        ),
         media_type="text/event-stream",
     )
+
+
+@router.post("/stop")
+async def stop_chat(
+    req: StopChatRequest,
+    pubkey: str = Depends(get_current_pubkey),
+) -> dict:
+    stop_event = _active_runs.get((pubkey, str(req.session_id), str(req.run_id)))
+    if stop_event is None:
+        return {"stopped": False}
+    stop_event.set()
+    return {"stopped": True}
 
 
 @router.get("/sessions")

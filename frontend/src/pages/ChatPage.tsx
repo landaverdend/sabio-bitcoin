@@ -7,11 +7,14 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
+import { AttachmentMenu } from "@/pages/chat/AttachmentMenu"
+import { ChatAttachment as ChatAttachmentPreview } from "@/pages/chat/ChatAttachment"
 import { CommunicationSourcePanel } from "@/pages/chat/CommunicationSourcePanel"
 import { MessageBubble } from "@/pages/chat/MessageBubble"
 import { SourceCodePanel } from "@/pages/chat/SourceCodePanel"
 import { useAppChat } from "@/pages/chat/chat-context"
 import type {
+  ChatAttachment,
   CommunicationReference,
   SourceReference,
 } from "@/pages/chat/hooks/use-chat"
@@ -24,6 +27,27 @@ const STARTERS = [
   "Any open PRs worth a look?",
   "What's being discussed on the mailing list lately?",
 ]
+
+const ACCEPTED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+])
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_IMAGES = 4
+const MAX_ATTACHMENTS = 8
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.addEventListener("load", () => resolve(String(reader.result)))
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("Could not read image")),
+    )
+    reader.readAsDataURL(file)
+  })
+}
 
 type SelectedEvidence =
   | { kind: "code"; source: SourceReference }
@@ -58,9 +82,14 @@ export default function ChatPage() {
     deleteSession,
   } = useAppChat()
   const [input, setInput] = useState("")
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [isReadingImages, setIsReadingImages] = useState(false)
+  const [isDraggingImages, setIsDraggingImages] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
   const [selectedEvidence, setSelectedEvidence] = useState<SelectedEvidence | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const isMobile = useIsMobile()
 
   useEffect(() => {
@@ -69,6 +98,8 @@ export default function ChatPage() {
 
   useEffect(() => {
     setSelectedEvidence(null)
+    setAttachments([])
+    setAttachmentError(null)
   }, [sessionId])
 
   const openCodeSource = useCallback((source: SourceReference) => {
@@ -79,9 +110,77 @@ export default function ChatPage() {
     setSelectedEvidence({ kind: "communication", source })
   }, [])
 
+  const addImages = useCallback(
+    async (files: File[]) => {
+      const currentImageCount = attachments.filter(
+        (attachment) => attachment.kind === "image",
+      ).length
+      const availableImageSlots = MAX_IMAGES - currentImageCount
+      const availableAttachmentSlots = MAX_ATTACHMENTS - attachments.length
+      const availableSlots = Math.min(availableImageSlots, availableAttachmentSlots)
+
+      if (availableSlots <= 0) {
+        setAttachmentError(
+          currentImageCount >= MAX_IMAGES
+            ? `You can attach up to ${MAX_IMAGES} images.`
+            : `You can attach up to ${MAX_ATTACHMENTS} items.`,
+        )
+        return
+      }
+
+      const images = files.filter((file) => ACCEPTED_IMAGE_TYPES.has(file.type))
+      if (images.length !== files.length) {
+        setAttachmentError("Images must be PNG, JPEG, WebP, or GIF.")
+      } else {
+        setAttachmentError(null)
+      }
+      const oversized = images.find((file) => file.size > MAX_IMAGE_BYTES)
+      if (oversized) {
+        setAttachmentError(`${oversized.name} is larger than 5 MB.`)
+        return
+      }
+
+      const selected = images.slice(0, availableSlots)
+      if (selected.length === 0) return
+      if (images.length > availableSlots) {
+        setAttachmentError(
+          `Only ${availableSlots} more attachment${availableSlots === 1 ? "" : "s"} can be added.`,
+        )
+      }
+
+      setIsReadingImages(true)
+      try {
+        const nextImages: ChatAttachment[] = await Promise.all(
+          selected.map(async (file) => ({
+            id: crypto.randomUUID(),
+            kind: "image" as const,
+            name: file.name,
+            mimeType: file.type,
+            size: file.size,
+            dataUrl: await fileToDataUrl(file),
+          })),
+        )
+        setAttachments((current) => [...current, ...nextImages])
+      } catch {
+        setAttachmentError("One of those images could not be read.")
+      } finally {
+        setIsReadingImages(false)
+        if (imageInputRef.current) imageInputRef.current.value = ""
+      }
+    },
+    [attachments],
+  )
+
   const submit = (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed || isStreaming || isLoadingHistory) return
+    if (
+      (!trimmed && attachments.length === 0) ||
+      isStreaming ||
+      isLoadingHistory ||
+      isReadingImages
+    ) {
+      return
+    }
     // Not signed in -- prompt the same Nostr login the sidebar offers
     // instead of letting this hit the chat endpoint's 401 and surface as a
     // generic "something went wrong". Doesn't auto-send afterward; hit send
@@ -92,7 +191,15 @@ export default function ChatPage() {
       return
     }
     setInput("")
-    void sendMessage(trimmed)
+    const message =
+      trimmed ||
+      (attachments.some((attachment) => attachment.kind === "image")
+        ? "What can you tell me about the attached image?"
+        : "Tell me about the attached context.")
+    const sentAttachments = attachments
+    setAttachments([])
+    setAttachmentError(null)
+    void sendMessage(message, [], sentAttachments)
   }
 
   const chatPane = (
@@ -145,11 +252,11 @@ export default function ChatPage() {
             <Loader2 className="size-5 animate-spin" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center gap-6 p-6 text-center">
+          <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center gap-5 p-6 text-center">
             <div className="space-y-1.5">
-              <h1 className="text-2xl font-semibold tracking-tight">Ask Sabio</h1>
-              <p className="text-muted-foreground">
-                Bitcoin protocol intelligence — commits, PRs, and community discussion, in one place.
+              <h1 className="text-xl font-semibold tracking-tight">Ask Sabio</h1>
+              <p className="text-sm text-muted-foreground">
+                Ask about Bitcoin Core code, contributors, and discussion.
               </p>
             </div>
             <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
@@ -158,7 +265,7 @@ export default function ChatPage() {
                   key={prompt}
                   type="button"
                   onClick={() => submit(prompt)}
-                  className="rounded-xl border px-3.5 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:border-sabio/30 hover:bg-sabio/5 hover:text-foreground"
+                  className="rounded-md border px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
                   {prompt}
                 </button>
@@ -179,16 +286,71 @@ export default function ChatPage() {
         )}
       </div>
 
-      <div className="border-t px-6 py-4">
-        {(authError || sessionError) && (
+      <div className="shrink-0 border-t bg-background px-4 py-4 sm:px-6">
+        {(authError || attachmentError || sessionError) && (
           <p className="mx-auto mb-2 max-w-3xl text-sm text-destructive">
-            {authError || sessionError}
+            {authError || attachmentError || sessionError}
           </p>
         )}
-        <div className="mx-auto flex max-w-3xl items-end gap-2">
+        <div
+          onDragEnter={(event) => {
+            if (event.dataTransfer.types.includes("Files")) setIsDraggingImages(true)
+          }}
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes("Files")) {
+              event.preventDefault()
+              event.dataTransfer.dropEffect = "copy"
+            }
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setIsDraggingImages(false)
+            }
+          }}
+          onDrop={(event) => {
+            event.preventDefault()
+            setIsDraggingImages(false)
+            void addImages(Array.from(event.dataTransfer.files))
+          }}
+          className={cn(
+            "relative mx-auto max-w-3xl rounded-xl border bg-card p-2 shadow-sm transition-colors",
+            isDraggingImages && "border-sabio bg-sabio/5 ring-3 ring-sabio/15",
+          )}
+        >
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={(event) => void addImages(Array.from(event.target.files ?? []))}
+          />
+          {attachments.length > 0 && (
+            <div className="flex max-h-36 flex-wrap gap-2 overflow-y-auto px-1 pb-2">
+              {attachments.map((attachment) => (
+                <ChatAttachmentPreview
+                  key={attachment.id}
+                  attachment={attachment}
+                  compact
+                  onRemove={() =>
+                    setAttachments((current) =>
+                      current.filter((item) => item.id !== attachment.id),
+                    )
+                  }
+                />
+              ))}
+            </div>
+          )}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files)
+              if (files.some((file) => file.type.startsWith("image/"))) {
+                event.preventDefault()
+                void addImages(files)
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
@@ -197,31 +359,67 @@ export default function ChatPage() {
             }}
             placeholder="Message Sabio…"
             rows={1}
-            className="max-h-40 min-h-10 flex-1 resize-none rounded-2xl border bg-transparent px-3.5 py-2.5 text-sm shadow-sm outline-none placeholder:text-muted-foreground focus-visible:border-sabio/40 focus-visible:ring-3 focus-visible:ring-sabio/15"
+            className="max-h-40 min-h-12 w-full resize-none bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground"
           />
-          {isStreaming ? (
-            <Button
-              size="icon"
-              onClick={stopStreaming}
-              className="rounded-full bg-sabio text-sabio-foreground hover:bg-sabio/90"
-              aria-label="Stop generating"
-            >
-              <Square className="size-3.5 fill-current" />
-            </Button>
-          ) : (
-            <Button
-              size="icon"
-              onClick={() => submit(input)}
-              disabled={!input.trim() || isLoadingHistory}
-              className={cn(
-                "rounded-full",
-                input.trim() && "bg-sabio text-sabio-foreground hover:bg-sabio/90",
-              )}
-            >
-              <ArrowUp className="size-4" />
-            </Button>
+          <div className="flex items-center gap-2">
+            <AttachmentMenu
+              disabled={isStreaming || isLoadingHistory || isReadingImages}
+              attachments={attachments}
+              onChooseImages={() => imageInputRef.current?.click()}
+              onAdd={(attachment) => {
+                if (attachments.length >= MAX_ATTACHMENTS) {
+                  setAttachmentError(`You can attach up to ${MAX_ATTACHMENTS} items.`)
+                  return
+                }
+                setAttachmentError(null)
+                setAttachments((current) => [...current, attachment])
+              }}
+            />
+            {isReadingImages && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                Adding image
+              </span>
+            )}
+            <span className="flex-1" />
+            {isStreaming ? (
+              <Button
+                size="icon"
+                onClick={stopStreaming}
+                className="rounded-full bg-sabio text-sabio-foreground hover:bg-sabio/90"
+                aria-label="Stop generating"
+              >
+                <Square className="size-3.5 fill-current" />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                onClick={() => submit(input)}
+                disabled={
+                  (!input.trim() && attachments.length === 0) ||
+                  isLoadingHistory ||
+                  isReadingImages
+                }
+                className={cn(
+                  "rounded-full",
+                  (input.trim() || attachments.length > 0) &&
+                    "bg-sabio text-sabio-foreground hover:bg-sabio/90",
+                )}
+                aria-label="Send message"
+              >
+                <ArrowUp className="size-4" />
+              </Button>
+            )}
+          </div>
+          {isDraggingImages && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-background/90 text-sm font-medium text-sabio">
+              Drop images here
+            </div>
           )}
         </div>
+        <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-muted-foreground">
+          Sabio can make mistakes. Check linked sources for important details.
+        </p>
       </div>
     </div>
   )

@@ -67,8 +67,38 @@ export type ContextItem = {
   loading?: boolean
 }
 
+export type ImageAttachment = {
+  id: string
+  kind: "image"
+  name: string
+  mimeType: string
+  size: number
+  dataUrl: string
+}
+
+export type RepositoryAttachment = {
+  id: string
+  kind: "repository"
+  repoId: string
+  label: string
+}
+
+export type PersonAttachment = {
+  id: string
+  kind: "person"
+  personId: number
+  label: string
+  githubUsername?: string
+  bitcointalkUsername?: string
+}
+
+export type ChatAttachment =
+  | ImageAttachment
+  | RepositoryAttachment
+  | PersonAttachment
+
 export type ChatMessage =
-  | { role: "user"; text: string; context?: ContextItem[] }
+  | { role: "user"; text: string; context?: ContextItem[]; attachments?: ChatAttachment[] }
   | { role: "assistant"; blocks: ChatBlock[] }
 
 export type ChatSessionSummary = {
@@ -140,7 +170,12 @@ function toolCallDetail(tool: string, args: Record<string, unknown>): string | u
 }
 
 type StreamEvent =
-  | { type: "user_message"; message: string; context: ContextItem[] }
+  | {
+      type: "user_message"
+      message: string
+      context: ContextItem[]
+      attachments?: ChatAttachment[]
+    }
   | { type: "text"; author: string; text: string }
   | { type: "handoff"; to: string }
   | { type: "tool_call"; author: string; tool: string; args: Record<string, unknown> }
@@ -226,6 +261,10 @@ function reduceEvents(events: StreamEvent[]): ChatMessage[] {
         role: "user",
         text: event.message,
         context: event.context.length > 0 ? event.context : undefined,
+        attachments:
+          event.attachments && event.attachments.length > 0
+            ? event.attachments
+            : undefined,
       })
       continue
     }
@@ -304,9 +343,13 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
   const [isStreaming, setIsStreaming] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
-  // Not state -- aborting shouldn't itself trigger a re-render, only the
-  // isStreaming flip that follows it.
-  const abortControllerRef = useRef<AbortController | null>(null)
+  // The run id addresses the matching backend agent execution. Keeping it
+  // beside the controller also prevents an old run's finally block from
+  // clearing the state of a newer run sent immediately after Stop.
+  const activeRunRef = useRef<{
+    controller: AbortController
+    runId: string
+  } | null>(null)
 
   // Restore the most recently active conversation after auth resolves. A
   // pubkey change is a hard tenant boundary: clear the prior user's local
@@ -521,16 +564,26 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
   }, [])
 
   const sendMessage = useCallback(
-    async (text: string, context: ContextItem[] = []) => {
+    async (
+      text: string,
+      context: ContextItem[] = [],
+      attachments: ChatAttachment[] = [],
+    ) => {
       setSessionError(null)
       setMessages((prev) => [
         ...prev,
-        { role: "user", text, context: context.length > 0 ? context : undefined },
+        {
+          role: "user",
+          text,
+          context: context.length > 0 ? context : undefined,
+          attachments: attachments.length > 0 ? attachments : undefined,
+        },
         { role: "assistant", blocks: [] },
       ])
       setIsStreaming(true)
       const controller = new AbortController()
-      abortControllerRef.current = controller
+      const runId = crypto.randomUUID()
+      activeRunRef.current = { controller, runId }
 
       try {
         const res = await fetch("/chat/stream", {
@@ -540,6 +593,7 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
           signal: controller.signal,
           body: JSON.stringify({
             session_id: sessionId,
+            run_id: runId,
             message: text,
             context: context.map((c) => ({
               path: c.path,
@@ -547,6 +601,31 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
               end_line: c.endLine,
               content: c.content,
             })),
+            attachments: attachments.map((attachment) => {
+              if (attachment.kind === "image") {
+                return {
+                  kind: attachment.kind,
+                  name: attachment.name,
+                  mime_type: attachment.mimeType,
+                  size: attachment.size,
+                  data_url: attachment.dataUrl,
+                }
+              }
+              if (attachment.kind === "repository") {
+                return {
+                  kind: attachment.kind,
+                  repo_id: attachment.repoId,
+                  label: attachment.label,
+                }
+              }
+              return {
+                kind: attachment.kind,
+                person_id: attachment.personId,
+                label: attachment.label,
+                github_username: attachment.githubUsername,
+                bitcointalk_username: attachment.bitcointalkUsername,
+              }
+            }),
           }),
         })
         if (!res.ok || !res.body) {
@@ -559,12 +638,13 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
 
         while (true) {
           const { done, value } = await reader.read()
-          if (done) break
+          if (done || controller.signal.aborted) break
           buffer += decoder.decode(value, { stream: true })
           const frames = buffer.split("\n\n")
           buffer = frames.pop() ?? ""
 
           for (const frame of frames) {
+            if (controller.signal.aborted) break
             const line = frame.split("\n").find((l) => l.startsWith("data: "))
             if (!line) continue
             const event = JSON.parse(line.slice("data: ".length)) as StreamEvent
@@ -600,30 +680,53 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
         // A user-initiated stop rejects the in-flight fetch/read with an
         // AbortError -- that's the expected outcome of stopStreaming below,
         // not a failure worth surfacing as "something went wrong".
-        if (!(err instanceof DOMException && err.name === "AbortError")) {
+        if (
+          !controller.signal.aborted &&
+          !(err instanceof DOMException && err.name === "AbortError")
+        ) {
           appendBlock({
             type: "text",
             text: `\n\n*Something went wrong: ${err instanceof Error ? err.message : "unknown error"}*`,
           })
         }
       } finally {
-        abortControllerRef.current = null
-        markLastToolDone()
-        setIsStreaming(false)
-        window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT))
+        if (activeRunRef.current?.runId === runId) {
+          activeRunRef.current = null
+          markLastToolDone()
+          setIsStreaming(false)
+          window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT))
+        }
       }
     },
     [sessionId, appendBlock, appendToolCall, markLastToolDone],
   )
 
-  // Aborting the fetch also drops the underlying HTTP connection, which is
-  // enough on its own to stop the backend: Starlette detects the disconnect
-  // and cancels the streaming generator's task, so the agent run itself
-  // (further LLM calls, tool calls) stops rather than just the display of
-  // it -- no separate "/chat/stop" endpoint needed.
   const stopStreaming = useCallback(() => {
-    abortControllerRef.current?.abort()
-  }, [])
+    const activeRun = activeRunRef.current
+    if (!activeRun) return
+
+    // Stop rendering immediately, then explicitly signal the matching
+    // backend run. The run id keeps this request from accidentally stopping
+    // a newer message in the same conversation.
+    activeRunRef.current = null
+    activeRun.controller.abort()
+    markLastToolDone()
+    setIsStreaming(false)
+    window.dispatchEvent(new Event(SESSIONS_CHANGED_EVENT))
+    void fetch("/chat/stop", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        run_id: activeRun.runId,
+      }),
+    }).catch(() => {
+      // The local AbortController has already stopped this client stream.
+      // A transient stop-endpoint failure should not replace the partial
+      // answer with an unrelated error message.
+    })
+  }, [markLastToolDone, sessionId])
 
   return {
     sessionId,
