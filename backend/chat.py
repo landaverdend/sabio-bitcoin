@@ -28,10 +28,42 @@ _USER_ID = "local"  # single-user local tool, no auth yet
 # session_id), so a fresh Runner per request would silently drop history.
 _runner = InMemoryRunner(agent=root_agent, app_name=_APP_NAME)
 
+_CONTEXT_ITEM_CHARS = 8000  # generous next to the mailing-list/forum content
+# caps elsewhere (those are prose; this is source, which reads worse cut
+# mid-function) -- guards against something pathological (a huge file
+# attached whole), not a limit anyone browsing real source should hit.
+
+
+class ContextItem(BaseModel):
+    """A file or a highlighted excerpt, explicitly attached by the user from
+    the code panel -- content is inlined directly into the model's prompt
+    rather than left for the repos agent to fetch itself via read_file, so
+    the model is guaranteed to see exactly what was attached rather than
+    possibly re-fetching the wrong slice (or the whole file, missing why a
+    specific range was highlighted)."""
+
+    path: str
+    start_line: int | None = None
+    end_line: int | None = None
+    content: str
+
 
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+    context: list[ContextItem] = []
+
+
+def _build_prompt(message: str, context: list[ContextItem]) -> str:
+    if not context:
+        return message
+
+    blocks = []
+    for item in context:
+        where = f"{item.path} (lines {item.start_line}-{item.end_line})" if item.start_line else item.path
+        blocks.append(f"### {where}\n```\n{item.content[:_CONTEXT_ITEM_CHARS]}\n```")
+
+    return "Attached context:\n\n" + "\n\n".join(blocks) + "\n\n---\n\n" + message
 
 
 def _sse(payload: dict) -> str:
@@ -51,9 +83,10 @@ async def _ensure_session(session_id: str) -> None:
         )
 
 
-async def _stream(session_id: str, message: str) -> AsyncIterator[str]:
+async def _stream(session_id: str, message: str, context: list[ContextItem]) -> AsyncIterator[str]:
     await _ensure_session(session_id)
-    content = types.Content(role="user", parts=[types.Part(text=message)])
+    prompt = _build_prompt(message, context)
+    content = types.Content(role="user", parts=[types.Part(text=prompt)])
 
     try:
         async for event in _runner.run_async(
@@ -96,4 +129,6 @@ async def _stream(session_id: str, message: str) -> AsyncIterator[str]:
 
 @router.post("/stream")
 async def stream_chat(req: ChatRequest) -> StreamingResponse:
-    return StreamingResponse(_stream(req.session_id, req.message), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream(req.session_id, req.message, req.context), media_type="text/event-stream",
+    )

@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FolderOpen } from "lucide-react"
+import { ChevronRight, Folder, FolderOpen, Plus } from "lucide-react"
 import { useMemo } from "react"
 import { Tree, type NodeRendererProps } from "react-arborist"
 import useMeasure from "react-use-measure"
@@ -13,9 +13,13 @@ type FileTreeProps = {
   activePath: string | null
   repoName: string
   browseRef: string
+  /** Optional: renders a hover "+" on each file row (not directories) that
+   * adds it to the code chat panel's context tray. Omitted entirely when
+   * the panel isn't open, rather than always reserving the space for it. */
+  onAddToContext?: (path: string) => void
 }
 
-export function FileTree({ onSelectFile, activePath, repoName, browseRef }: FileTreeProps) {
+export function FileTree({ onSelectFile, activePath, repoName, browseRef, onAddToContext }: FileTreeProps) {
   const [measureRef, bounds] = useMeasure()
   const { data, isLoading, isError } = useRepoTree(repoName, browseRef)
 
@@ -36,7 +40,7 @@ export function FileTree({ onSelectFile, activePath, repoName, browseRef }: File
           style={style}
           onClick={() => (isDir ? node.toggle() : onSelectFile(node.data.id))}
           className={cn(
-            "flex cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm select-none hover:bg-accent",
+            "group flex cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm select-none hover:bg-accent",
             node.isSelected && "bg-accent text-accent-foreground",
           )}
         >
@@ -51,12 +55,25 @@ export function FileTree({ onSelectFile, activePath, repoName, browseRef }: File
             <span className="w-3.5 shrink-0" />
           )}
           <Icon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">{node.data.name}</span>
+          <span className="min-w-0 flex-1 truncate">{node.data.name}</span>
+          {!isDir && onAddToContext && (
+            <button
+              type="button"
+              title="Add to chat"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddToContext(node.data.id)
+              }}
+              className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground group-hover:block"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          )}
         </div>
       )
     }
     return TreeNode
-  }, [onSelectFile])
+  }, [onSelectFile, onAddToContext])
 
   return (
     <div ref={measureRef} className="h-full min-h-0 w-full overflow-hidden">

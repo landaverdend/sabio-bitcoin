@@ -1,4 +1,4 @@
-import { Bot, Code2, MessagesSquare, Users } from "lucide-react"
+import { Bot, Code2, Users } from "lucide-react"
 import { NavLink, useLocation } from "react-router-dom"
 
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -19,7 +19,6 @@ import { DEFAULT_REPO } from "@/lib/repos"
 const items = [
   { to: "/chat", label: "Chat", icon: Bot },
   { to: `/code/${DEFAULT_REPO}`, label: "Code", icon: Code2, matchPrefix: "/code" },
-  { to: "/comms", label: "Comms", icon: MessagesSquare },
   { to: "/people", label: "People", icon: Users },
 ]
 

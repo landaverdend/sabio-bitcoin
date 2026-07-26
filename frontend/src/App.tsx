@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { DEFAULT_REPO } from "@/lib/repos"
 import ChatPage from "@/pages/ChatPage"
 import CodePage from "@/pages/CodePage"
-import CommsPage from "@/pages/CommsPage"
 import PeoplePage from "@/pages/PeoplePage"
 import CommitDetailPage from "@/pages/code/CommitDetailPage"
 import CommitsPage from "@/pages/code/CommitsPage"
@@ -44,7 +43,6 @@ function App() {
               <Route path="/code/:repoName/commits" element={<CommitsPage />} />
               <Route path="/code/:repoName/commits/*" element={<CommitsPage />} />
               <Route path="/code/:repoName/commit/:sha" element={<CommitDetailPage />} />
-              <Route path="/comms" element={<CommsPage />} />
               <Route path="/people" element={<PeoplePage />} />
               <Route path="/people/:id" element={<PersonDetailPage />} />
             </Routes>

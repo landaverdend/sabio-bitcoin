@@ -1,5 +1,5 @@
 import Editor, { type Monaco } from "@monaco-editor/react"
-import { X } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import type { editor as MonacoEditor } from "monaco-editor"
 import { useEffect, useRef, useState } from "react"
 
@@ -18,7 +18,11 @@ type FileViewerProps = {
   onCloseTab: (path: string) => void
   repoName: string
   browseRef: string
+  /** Omitted entirely when the code chat panel isn't open. */
+  onAddSelection?: (path: string, startLine: number, endLine: number, content: string) => void
 }
+
+type PendingSelection = { startLine: number; endLine: number; top: number; left: number }
 
 function basename(path: string): string {
   return path.split("/").pop() ?? path
@@ -31,6 +35,7 @@ export function FileViewer({
   onCloseTab,
   repoName,
   browseRef,
+  onAddSelection,
 }: FileViewerProps) {
   const { theme } = useTheme()
   const isDark =
@@ -44,6 +49,10 @@ export function FileViewer({
   // matching GitLens/VS Code's actual default (always on, follows the
   // cursor), not a manual per-file toggle.
   const [currentLine, setCurrentLine] = useState(1)
+  // A non-empty selection's line range and where to float the "add to chat"
+  // button -- null whenever the selection is empty (just a cursor) or the
+  // panel that would consume it isn't open (onAddSelection undefined).
+  const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null)
 
   const results = useRepoFiles(openPaths, repoName, browseRef)
   const activeIndex = activePath ? openPaths.indexOf(activePath) : -1
@@ -60,6 +69,7 @@ export function FileViewer({
   // against a model that's no longer visible.
   useEffect(() => {
     setCurrentLine(editorRef.current?.getPosition()?.lineNumber ?? 1)
+    setPendingSelection(null)
     decorationsRef.current?.clear()
     decorationsRef.current = null
   }, [activePath])
@@ -107,7 +117,8 @@ export function FileViewer({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-col">
+
       <div role="tablist" className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b">
         {openPaths.map((path) => {
           const name = basename(path)
@@ -140,7 +151,7 @@ export function FileViewer({
           )
         })}
       </div>
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         {activeResult?.isLoading && (
           <p className="p-3 text-sm text-muted-foreground">Loading…</p>
         )}
@@ -163,8 +174,46 @@ export function FileViewer({
               monacoRef.current = monaco
               setCurrentLine(editor.getPosition()?.lineNumber ?? 1)
               editor.onDidChangeCursorPosition((e) => setCurrentLine(e.position.lineNumber))
+              editor.onDidChangeCursorSelection((e) => {
+                if (!onAddSelection || e.selection.isEmpty()) {
+                  setPendingSelection(null)
+                  return
+                }
+                const { startLineNumber, endLineNumber, endColumn } = e.selection
+                // A selection ending at column 1 of a line hasn't actually
+                // included that line's content (just its leading edge) --
+                // floating the button past it, and later slicing one line
+                // too many into the attached excerpt, would both be wrong.
+                const endLine = endColumn === 1 && endLineNumber > startLineNumber ? endLineNumber - 1 : endLineNumber
+                const pos = editor.getScrolledVisiblePosition({ lineNumber: endLine, column: 1 })
+                if (!pos) return
+                setPendingSelection({ startLine: startLineNumber, endLine, top: pos.top, left: pos.left })
+              })
             }}
           />
+        )}
+        {pendingSelection && onAddSelection && activePath && (
+          <button
+            type="button"
+            style={{ top: pendingSelection.top, left: pendingSelection.left }}
+            className="absolute z-10 flex items-center gap-1 rounded-md border border-sabio/30 bg-sabio/10 px-1.5 py-0.5 text-xs text-sabio shadow-sm hover:bg-sabio/20"
+            onClick={() => {
+              const model = editorRef.current?.getModel()
+              if (!model) return
+              const { startLine, endLine } = pendingSelection
+              const content = model.getValueInRange({
+                startLineNumber: startLine,
+                startColumn: 1,
+                endLineNumber: endLine,
+                endColumn: model.getLineMaxColumn(endLine),
+              })
+              onAddSelection(activePath, startLine, endLine, content)
+              setPendingSelection(null)
+            }}
+          >
+            <Plus className="size-3" />
+            Add to chat
+          </button>
         )}
       </div>
     </div>

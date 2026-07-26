@@ -18,8 +18,29 @@ export type ChatBlock =
   | { type: "text"; text: string }
   | { type: "tool"; tool: string; label: string; icon: LucideIcon; calls: ToolCall[] }
 
+// A file or highlighted excerpt attached from the code panel -- content is
+// sent to the backend to be inlined directly into the model's prompt (see
+// backend/chat.py's ContextItem/_build_prompt), not just referenced by path,
+// so the model is guaranteed to see exactly what was attached.
+export type ContextItem = {
+  id: string
+  path: string
+  startLine?: number
+  endLine?: number
+  content: string
+  // A whole-file attach fetches content over the network (~1s to GitHub's
+  // API for anything not already cached) -- the chip appears immediately
+  // (this flag never affects its rendering, see ContextChip) while the
+  // fetch runs behind it, patched in place once the real content arrives.
+  // Purely a send-time guard (see CodeChatPanel's hasPendingContext): don't
+  // let a message go out with an empty excerpt for something still in
+  // flight. A selection excerpt already has its content from the open
+  // editor, so it never needs this.
+  loading?: boolean
+}
+
 export type ChatMessage =
-  | { role: "user"; text: string }
+  | { role: "user"; text: string; context?: ContextItem[] }
   | { role: "assistant"; blocks: ChatBlock[] }
 
 // Sabio is presented to the user as a single collaborator, not a router
@@ -39,20 +60,44 @@ const TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
   resolve: { label: "Resolving identity", icon: UserSearch },
   get_message: { label: "Reading a message", icon: MessageSquare },
   get_thread: { label: "Reading a thread", icon: MessageSquare },
-  search_messages: { label: "Searching the mailing list", icon: Search },
+  // Not "the mailing list" -- search_messages has no channel filter and
+  // spans mailing list, its historical precursor lists, and BitcoinTalk in
+  // one query, so a channel-specific label here would misrepresent what was
+  // actually searched.
+  search_messages: { label: "Searching discussions", icon: Search },
 }
 
 function toolMeta(tool: string): { label: string; icon: LucideIcon } {
   return TOOL_META[tool] ?? { label: `Using ${tool}`, icon: Search }
 }
 
-// Repo-scoped tools fire once per configured repo (core/knots/bips/secp256k1)
-// for a single question -- without this, "what changed in commits" renders
-// as four identical "Looking up commits" rows animating at once, which is
-// noise, not information. repo_name is what actually varies between those
-// calls, so it's what's worth surfacing once they're grouped into one row.
-function toolCallDetail(args: Record<string, unknown>): string | undefined {
-  return typeof args.repo_name === "string" ? args.repo_name : undefined
+// Which argument best answers "what specifically did this call do" once a
+// tool's repeated calls are grouped into one row (see appendToolCall).
+// Repo-scoped tools (get_commits, ...) fire once per configured repo for a
+// single question, so repo_name is what varies between those calls --
+// content-scoped tools (search_code, resolve, ...) instead fire multiple
+// times against the *same* repo/scope with a different query or path each
+// time, so repo_name would just repeat the same word once per call (e.g.
+// "knots, knots, knots" for a multi-term code search) while the argument
+// that actually distinguishes the calls goes unshown.
+const DETAIL_ARG: Record<string, string> = {
+  get_commits: "repo_name",
+  get_open_prs: "repo_name",
+  get_pr_detail: "repo_name",
+  get_issues: "repo_name",
+  get_contributor_stats: "repo_name",
+  list_directory: "path",
+  read_file: "path",
+  search_code: "query",
+  resolve: "query",
+  get_message: "message_id",
+  get_thread: "message_id",
+  search_messages: "query",
+}
+
+function toolCallDetail(tool: string, args: Record<string, unknown>): string | undefined {
+  const value = args[DETAIL_ARG[tool]]
+  return typeof value === "string" ? value : undefined
 }
 
 type StreamEvent =
@@ -104,7 +149,7 @@ export function useChat() {
       if (last.role !== "assistant") return prev
       const blocks = [...last.blocks]
       const lastBlock = blocks[blocks.length - 1]
-      const call: ToolCall = { detail: toolCallDetail(args), done: false }
+      const call: ToolCall = { detail: toolCallDetail(tool, args), done: false }
 
       if (lastBlock?.type === "tool" && lastBlock.tool === tool) {
         blocks[blocks.length - 1] = { ...lastBlock, calls: [...lastBlock.calls, call] }
@@ -139,15 +184,28 @@ export function useChat() {
   }, [])
 
   const sendMessage = useCallback(
-    async (text: string) => {
-      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", blocks: [] }])
+    async (text: string, context: ContextItem[] = []) => {
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", text, context: context.length > 0 ? context : undefined },
+        { role: "assistant", blocks: [] },
+      ])
       setIsStreaming(true)
 
       try {
         const res = await fetch("/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, message: text }),
+          body: JSON.stringify({
+            session_id: sessionId,
+            message: text,
+            context: context.map((c) => ({
+              path: c.path,
+              start_line: c.startLine,
+              end_line: c.endLine,
+              content: c.content,
+            })),
+          }),
         })
         if (!res.ok || !res.body) {
           throw new Error(`chat request failed: ${res.status}`)

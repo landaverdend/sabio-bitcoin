@@ -31,7 +31,12 @@ def _get_client() -> Github:
 
 
 def _resolve_repo(repo_name: str):
-    slug = REPOS.get(repo_name)
+    """Resolves a configured alias (REPOS) or, failing that, a raw "owner/repo"
+    slug passed through as-is -- lets tools follow a PR onto its actual head
+    repo (get_pr_detail returns head_repo/head_ref for exactly this), which is
+    routinely a contributor's personal fork rather than a branch of the base
+    repo: work that hasn't merged customarily lives there, not here."""
+    slug = REPOS.get(repo_name) or (repo_name if "/" in repo_name else None)
     if not slug:
         raise ValueError(f"No GitHub repo configured for: {repo_name}")
     return _get_client().get_repo(slug)
@@ -137,6 +142,14 @@ def get_pr_detail(repo_name: str = "core", number: int = 0) -> dict:
         "comments": comments,
         "review_comments": review_comments,
         "url": pr.html_url,
+        # Where the proposed code actually lives -- often a contributor's own
+        # fork, not a branch of repo_name itself (merged=False means none of
+        # this exists on the default branch yet). Pass these straight through
+        # as read_file/list_directory's repo_name/ref to read it directly:
+        # _resolve_repo accepts a raw "owner/repo" slug, not just the four
+        # configured aliases, for exactly this.
+        "head_repo": pr.head.repo.full_name if pr.head.repo else None,
+        "head_ref": pr.head.ref,
     }
 
 
@@ -149,23 +162,29 @@ def search_prs(
 ) -> list[dict]:
     """Search pull requests by title/body text, optionally scoped to an
     author (GitHub login -- e.g. from resolve()'s github_username) and/or
-    state ("open"/"closed"). Unlike get_open_prs, this finds a PR regardless
-    of age or whether it's still open -- a PR relevant to some topic could
-    easily be old, merged, or closed by now, and get_open_prs would never
-    surface it. Pass the resulting number to get_pr_detail for the full
-    discussion."""
+    state ("open" or "closed" -- omit for both). Unlike get_open_prs, this
+    finds a PR regardless of age or whether it's still open -- a PR relevant
+    to some topic could easily be old, merged, or closed by now, and
+    get_open_prs would never surface it. Pass the resulting number to
+    get_pr_detail for the full discussion."""
     repo = _resolve_repo(repo_name)
     query_parts = [f"repo:{repo.full_name}", "is:pr"]
     if query:
         query_parts.append(query)
     if author:
         query_parts.append(f"author:{author}")
-    if state:
+    # GitHub's search only recognizes state:open/state:closed -- anything
+    # else (an LLM passing "all" for "both", say) isn't a real qualifier and
+    # was seen crashing PyGithub's result pagination outright rather than
+    # just being ignored, so it's dropped here instead of passed through.
+    if state in ("open", "closed"):
         query_parts.append(f"state:{state}")
     results = _get_client().search_issues(" ".join(query_parts))
 
     prs = []
-    for issue in results[:max_count]:
+    for issue in results:
+        if len(prs) >= max_count:
+            break
         prs.append({
             "number": issue.number,
             "title": issue.title,

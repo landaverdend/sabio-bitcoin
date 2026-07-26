@@ -2,6 +2,7 @@ import { Loader2 } from "lucide-react"
 
 import { Markdown } from "@/components/Markdown"
 import { cn } from "@/lib/utils"
+import { ContextChip } from "@/pages/chat/ContextChip"
 import type { ChatBlock, ChatMessage } from "@/pages/chat/hooks/use-chat"
 
 // Small quiet monogram rather than a bot-in-a-circle icon -- Sabio is meant
@@ -64,10 +65,17 @@ function ToolChip({ block }: { block: Extract<ChatBlock, { type: "tool" }> }) {
 export function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1.5">
         <p className="max-w-xl rounded-2xl bg-primary px-4 py-2.5 text-sm whitespace-pre-wrap text-primary-foreground">
           {message.text}
         </p>
+        {message.context && message.context.length > 0 && (
+          <div className="flex max-w-xl flex-wrap justify-end gap-1.5">
+            {message.context.map((item) => (
+              <ContextChip key={item.id} item={item} tone="on-page" />
+            ))}
+          </div>
+        )}
       </div>
     )
   }

@@ -8,7 +8,7 @@ export type FileResponse = {
   binary: boolean
 }
 
-async function fetchRepoFile(repoName: string, ref: string, path: string): Promise<FileResponse> {
+export async function fetchRepoFile(repoName: string, ref: string, path: string): Promise<FileResponse> {
   const params = new URLSearchParams({ repo_name: repoName, ref, path })
   const res = await fetch(`/repo/file?${params}`)
   if (!res.ok) {
@@ -17,7 +17,7 @@ async function fetchRepoFile(repoName: string, ref: string, path: string): Promi
   return res.json()
 }
 
-function repoFileQuery(path: string, repoName: string, ref: string) {
+export function repoFileQuery(path: string, repoName: string, ref: string) {
   return {
     queryKey: ["repo-file", repoName, ref, path],
     queryFn: () => fetchRepoFile(repoName, ref, path),

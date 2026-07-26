@@ -39,6 +39,21 @@ age or state, then get_pr_detail on the matched number for the full discussion
 (reviews with their comment text, top-level conversation comments, and inline
 per-line review comments).
 
+Any question that references a BIP number should check 'bips' for its actual text
+(search_code(repo_name='bips', ...)), even if the question is framed around a specific
+client's codebase ("does knots implement BIP-119") -- otherwise you're answering
+without ever having read the thing being asked about.
+
+search_code and get_commits only see what's merged to a repo's default branch. Code
+that hasn't merged yet -- a pending BIP implementation, anything described as upcoming
+or "activating soon", a reverted or superseded attempt -- customarily lives only on a
+PR, and often on a contributor's own fork rather than a branch of the base repo itself.
+An empty search_code result means "not merged", not "doesn't exist": check search_prs
+(covers open and closed PRs) before concluding there's no implementation, then, for
+anything relevant, call get_pr_detail and use its head_repo/head_ref -- pass them
+straight through as repo_name/ref to read_file or list_directory to read the actual
+proposed code, fork or not.
+
 Ground your answers in real commit, PR, and issue data, not prior knowledge.
 """
 
