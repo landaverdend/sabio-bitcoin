@@ -2,7 +2,12 @@
 # schema in ADK 1.22. Keep the existing synchronous Postgres integration and
 # db/migrations/0009_adk_sessions.sql on the version they were built for
 # until that upgrade is performed deliberately with `adk migrate session`.
-google-adk[litellm]==1.13.0
+# google-adk 1.13.0's real extras are "extensions"/"test" -- [litellm] is not
+# one of them and pip silently ignores unknown extra names instead of
+# erroring, so it was never actually pulling litellm in (only worked locally
+# because litellm happened to already be installed separately).
+google-adk==1.13.0
+litellm==1.82.6
 openai==2.36.0
 anthropic
 python-dotenv

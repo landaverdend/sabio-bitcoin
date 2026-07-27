@@ -1,0 +1,15 @@
+.env
+.git
+.claude
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+*.log
+.DS_Store
+repos/
+
+frontend/node_modules
+frontend/dist
