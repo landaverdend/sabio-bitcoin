@@ -4,6 +4,7 @@ from google.adk.models.lite_llm import LiteLlm
 
 from agents.comms.agent import root_agent as comms_agent
 from agents.repos.agent import root_agent as repos_agent
+from agents.shared.tools import now, search_web
 
 load_dotenv()
 
@@ -18,5 +19,6 @@ root_agent = Agent(
     model=LiteLlm(model="openai/gpt-4o-mini"),
     description="Sabio, a Bitcoin protocol intelligence assistant that coordinates specialist agents.",
     instruction=INSTRUCTION,
+    tools=[now, search_web],
     sub_agents=[repos_agent, comms_agent],
 )

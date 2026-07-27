@@ -215,6 +215,43 @@ def test_search_result_does_not_become_final_communication_source():
     ]
 
 
+def test_search_web_result_becomes_clickable_web_sources():
+    response = {
+        "answer": "A sourced answer.",
+        "sources": [
+            {
+                "title": "Bitcoin Optech",
+                "url": "https://bitcoinops.org/en/newsletters/2026/01/01/",
+            },
+            {
+                "title": "Duplicate",
+                "url": "https://bitcoinops.org/en/newsletters/2026/01/01/",
+            },
+            {"title": "Unsafe", "url": "javascript:alert(1)"},
+        ],
+    }
+    event = Event(
+        author="sabio_repos",
+        content=types.Content(
+            role="user",
+            parts=[types.Part.from_function_response(name="search_web", response=response)],
+        ),
+    )
+
+    assert chat._event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_repos",
+            "tool": "search_web",
+        },
+        {
+            "type": "web_source",
+            "title": "Bitcoin Optech",
+            "source_url": response["sources"][0]["url"],
+        },
+    ]
+
+
 class _FakeSessionService:
     def __init__(self):
         self.sessions = [

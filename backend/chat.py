@@ -15,6 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from google.adk.events.event import Event
+from google.adk.events.event_actions import EventActions
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, DatabaseSessionService
 from google.genai import types
@@ -97,6 +98,10 @@ class ChatRequest(BaseModel):
     session_id: UUID
     message: str = Field(min_length=1, max_length=16_000)
     context: list[ContextItem] = Field(default_factory=list, max_length=8)
+
+
+class RenameSessionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=_TITLE_CHARS)
 
 
 def _build_prompt(message: str, context: list[ContextItem]) -> str:
@@ -259,6 +264,36 @@ def _communication_reference(response: dict) -> dict | None:
     }
 
 
+def _web_references(response: dict) -> list[dict]:
+    """Build source-card events only from search_web's cited URLs."""
+    raw_sources = response.get("sources")
+    if not isinstance(raw_sources, list):
+        return []
+
+    references = []
+    seen_urls: set[str] = set()
+    for source in raw_sources[:8]:
+        if not isinstance(source, dict):
+            continue
+        title = source.get("title")
+        url = source.get("url")
+        if (
+            not isinstance(title, str)
+            or not title.strip()
+            or not isinstance(url, str)
+            or not url.startswith(("http://", "https://"))
+            or url in seen_urls
+        ):
+            continue
+        seen_urls.add(url)
+        references.append({
+            "type": "web_source",
+            "title": title.strip(),
+            "source_url": url,
+        })
+    return references
+
+
 def _event_payloads(event: Event) -> list[dict]:
     """Turns one ADK event into this app's own {type, ...} shape -- shared by
     the live SSE loop below and by the session-history endpoint, so a past
@@ -321,6 +356,8 @@ def _event_payloads(event: Event) -> list[dict]:
                     source = _communication_reference(part.function_response.response or {})
                     if source is not None:
                         payloads.append(source)
+                elif part.function_response.name == "search_web":
+                    payloads.extend(_web_references(part.function_response.response or {}))
         elif part.text:
             payloads.append({"type": "text", "author": event.author, "text": part.text})
     return payloads
@@ -386,6 +423,34 @@ async def get_chat_session(session_id: UUID, pubkey: str = Depends(get_current_p
         raise HTTPException(status_code=404, detail="session not found")
     events = [payload for event in session.events for payload in _event_payloads(event)]
     return {"session_id": normalized_id, "events": events}
+
+
+@router.patch("/sessions/{session_id}")
+async def rename_chat_session(
+    session_id: UUID, req: RenameSessionRequest, pubkey: str = Depends(get_current_pubkey),
+) -> dict:
+    """Renaming isn't a normal ADK session field -- state is the only mutable
+    per-session slot the schema gives us, and the title already lives there
+    (see _ensure_session). Updating it means appending a real event whose
+    only effect is the state delta: author='system' (never 'user') keeps
+    _event_payloads' history replay from mistaking this for a chat turn, and
+    no content means it already returns [] there without any special-casing."""
+    service, _ = _get_session_runtime()
+    normalized_id = str(session_id)
+    lock = await _get_session_lock(pubkey, normalized_id)
+    async with lock:
+        session = await service.get_session(
+            app_name=_APP_NAME, user_id=pubkey, session_id=normalized_id,
+        )
+        if session is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        title = req.title.strip()
+        if not title:
+            raise HTTPException(status_code=422, detail="title cannot be blank")
+        await service.append_event(
+            session, Event(author="system", actions=EventActions(state_delta={"title": title})),
+        )
+    return {"session_id": normalized_id, "title": title}
 
 
 @router.delete("/sessions/{session_id}")

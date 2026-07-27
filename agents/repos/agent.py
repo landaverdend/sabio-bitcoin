@@ -3,6 +3,7 @@ from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
 from agents.shared.resolve import resolve
+from agents.shared.tools import now, search_web
 
 from .code_browser import list_directory, read_file, search_code
 from .github_tools import (
@@ -78,6 +79,8 @@ root_agent = Agent(
     ),
     instruction=INSTRUCTION,
     tools=[
+        now,
+        search_web,
         resolve,
         get_commits,
         get_open_prs,

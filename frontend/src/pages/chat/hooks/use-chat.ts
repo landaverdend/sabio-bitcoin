@@ -3,6 +3,7 @@ import {
   Folder,
   GitCommitHorizontal,
   GitPullRequest,
+  Globe2,
   MessageSquare,
   Search,
   TicketCheck,
@@ -33,11 +34,17 @@ export type CommunicationReference = {
   sourceUrl: string
 }
 
+export type WebReference = {
+  title: string
+  sourceUrl: string
+}
+
 export type ChatBlock =
   | { type: "text"; text: string }
   | { type: "tool"; tool: string; label: string; icon: LucideIcon; calls: ToolCall[] }
   | { type: "source"; source: SourceReference }
   | { type: "communication_source"; source: CommunicationReference }
+  | { type: "web_source"; source: WebReference }
 
 // A file or highlighted excerpt attached from the code panel -- content is
 // sent to the backend to be inlined directly into the model's prompt (see
@@ -94,6 +101,8 @@ const TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
   // one query, so a channel-specific label here would misrepresent what was
   // actually searched.
   search_messages: { label: "Searching discussions", icon: Search },
+  search_web: { label: "Searching the web", icon: Globe2 },
+  now: { label: "Checking the current time", icon: Globe2 },
 }
 
 function toolMeta(tool: string): { label: string; icon: LucideIcon } {
@@ -122,6 +131,7 @@ const DETAIL_ARG: Record<string, string> = {
   get_message: "message_id",
   get_thread: "message_id",
   search_messages: "query",
+  search_web: "query",
 }
 
 function toolCallDetail(tool: string, args: Record<string, unknown>): string | undefined {
@@ -154,6 +164,11 @@ type StreamEvent =
       excerpt: string
       source_url: string
     }
+  | {
+      type: "web_source"
+      title: string
+      source_url: string
+    }
   | { type: "error"; message: string }
   | { type: "done" }
 
@@ -178,6 +193,15 @@ function communicationReference(
     title: event.title,
     postedAt: event.posted_at,
     excerpt: event.excerpt,
+    sourceUrl: event.source_url,
+  }
+}
+
+function webReference(
+  event: Extract<StreamEvent, { type: "web_source" }>,
+): WebReference {
+  return {
+    title: event.title,
     sourceUrl: event.source_url,
   }
 }
@@ -235,6 +259,8 @@ function reduceEvents(events: StreamEvent[]): ChatMessage[] {
         type: "communication_source",
         source: communicationReference(event),
       })
+    } else if (event.type === "web_source") {
+      blocks.push({ type: "web_source", source: webReference(event) })
     }
     // tool_result: a completed session's calls are already known-done (see
     // `done: true` above) -- there's no in-flight state left to mark.
@@ -400,6 +426,32 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
     [isStreaming, sessionId, sessions],
   )
 
+  const renameSession = useCallback(
+    async (targetSessionId: string, title: string) => {
+      const trimmed = title.trim()
+      if (!trimmed) return
+      setSessionError(null)
+      try {
+        await requestJson<{ session_id: string; title: string }>(
+          `/chat/sessions/${targetSessionId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: trimmed }),
+          },
+        )
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.session_id === targetSessionId ? { ...session, title: trimmed } : session,
+          ),
+        )
+      } catch (err) {
+        setSessionError(err instanceof Error ? err.message : "Could not rename conversation")
+      }
+    },
+    [],
+  )
+
   const appendBlock = useCallback((block: ChatBlock) => {
     setMessages((prev) => {
       const next = [...prev]
@@ -537,6 +589,8 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
                 type: "communication_source",
                 source: communicationReference(event),
               })
+            } else if (event.type === "web_source") {
+              appendBlock({ type: "web_source", source: webReference(event) })
             } else if (event.type === "error") {
               appendBlock({ type: "text", text: `\n\n*Something went wrong: ${event.message}*` })
             }
@@ -583,5 +637,6 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
     newSession,
     loadSession,
     deleteSession,
+    renameSession,
   }
 }

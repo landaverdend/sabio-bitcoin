@@ -3,6 +3,7 @@
 # db/migrations/0009_adk_sessions.sql on the version they were built for
 # until that upgrade is performed deliberately with `adk migrate session`.
 google-adk[litellm]==1.13.0
+openai==2.36.0
 anthropic
 python-dotenv
 PyGithub

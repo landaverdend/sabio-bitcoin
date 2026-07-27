@@ -3,6 +3,7 @@ from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
 from agents.shared.resolve import resolve
+from agents.shared.tools import now, search_web
 
 from .db_tools import get_message, get_thread, search_messages
 
@@ -51,5 +52,5 @@ root_agent = Agent(
         "BitcoinTalk) stored in Postgres."
     ),
     instruction=INSTRUCTION,
-    tools=[resolve, get_message, get_thread, search_messages],
+    tools=[now, search_web, resolve, get_message, get_thread, search_messages],
 )

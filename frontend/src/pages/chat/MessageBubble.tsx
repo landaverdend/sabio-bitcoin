@@ -1,4 +1,4 @@
-import { Code2, ExternalLink, Loader2, MessageSquareQuote } from "lucide-react"
+import { Code2, ExternalLink, Globe2, Loader2, MessageSquareQuote } from "lucide-react"
 
 import { Markdown } from "@/components/Markdown"
 import { channelLabel } from "@/lib/channels"
@@ -10,18 +10,8 @@ import type {
   ChatMessage,
   CommunicationReference,
   SourceReference,
+  WebReference,
 } from "@/pages/chat/hooks/use-chat"
-
-// Small quiet monogram rather than a bot-in-a-circle icon -- Sabio is meant
-// to read as one collaborator with a consistent mark, not a generic
-// assistant avatar.
-function SabioMark() {
-  return (
-    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-sabio/25 bg-sabio/10 text-[11px] font-semibold text-sabio">
-      S
-    </span>
-  )
-}
 
 function ThinkingDots() {
   return (
@@ -192,6 +182,33 @@ function CommunicationSourceChip({
   )
 }
 
+function WebSourceChip({ source }: { source: WebReference }) {
+  let hostname = source.sourceUrl
+  try {
+    hostname = new URL(source.sourceUrl).hostname.replace(/^www\./, "")
+  } catch {
+    // The backend only emits validated HTTP(S) URLs. Keep the full URL as a
+    // defensive display fallback if an old persisted event is malformed.
+  }
+
+  return (
+    <a
+      href={source.sourceUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex max-w-full items-center gap-2 rounded-lg border bg-muted/20 px-2.5 py-2 text-xs hover:bg-accent"
+      title={`Open source on ${hostname}`}
+    >
+      <Globe2 className="size-3.5 shrink-0 text-sabio" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-foreground">{source.title}</span>
+        <span className="block truncate text-muted-foreground">{hostname}</span>
+      </span>
+      <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+    </a>
+  )
+}
+
 export function MessageBubble({
   message,
   onOpenSource,
@@ -219,33 +236,33 @@ export function MessageBubble({
   }
 
   return (
-    <div className="flex max-w-2xl items-start gap-3">
-      <SabioMark />
-      <div className="min-w-0 flex-1 space-y-2 pt-0.5">
-        {message.blocks.length === 0 && <ThinkingDots />}
-        {message.blocks.map((block, i) => {
-          if (block.type === "text") {
-            return (
-              <Markdown key={i} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                {block.text}
-              </Markdown>
-            )
-          }
-          if (block.type === "source") {
-            return <SourceChip key={i} source={block.source} onOpen={onOpenSource} />
-          }
-          if (block.type === "communication_source") {
-            return (
-              <CommunicationSourceChip
-                key={i}
-                source={block.source}
-                onOpen={onOpenCommunication}
-              />
-            )
-          }
-          return <ToolChip key={i} block={block} />
-        })}
-      </div>
+    <div className="max-w-2xl space-y-2">
+      {message.blocks.length === 0 && <ThinkingDots />}
+      {message.blocks.map((block, i) => {
+        if (block.type === "text") {
+          return (
+            <Markdown key={i} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+              {block.text}
+            </Markdown>
+          )
+        }
+        if (block.type === "source") {
+          return <SourceChip key={i} source={block.source} onOpen={onOpenSource} />
+        }
+        if (block.type === "communication_source") {
+          return (
+            <CommunicationSourceChip
+              key={i}
+              source={block.source}
+              onOpen={onOpenCommunication}
+            />
+          )
+        }
+        if (block.type === "web_source") {
+          return <WebSourceChip key={i} source={block.source} />
+        }
+        return <ToolChip key={i} block={block} />
+      })}
     </div>
   )
 }
