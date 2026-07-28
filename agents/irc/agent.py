@@ -3,6 +3,7 @@ from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
 from agents.shared.guardrails import redact_agent_names
+from agents.shared.instructions import COORDINATOR_RETURN_INSTRUCTION
 from agents.shared.resolve import resolve
 from agents.shared.tools import now
 
@@ -44,7 +45,10 @@ If a focused search returns nothing, retry once with fewer structured filters or
 broader English Bitcoin terminology. If the archive still has no evidence, report
 that clearly to the root agent. Do not substitute memory or open-web summaries for
 missing IRC evidence, and never invent a quote, identity mapping, correlation, or URL.
-"""
+
+If IRC is not one of the sources the user requested and adds no material evidence,
+return control without pretending that the other evidence paths failed.
+""" + COORDINATOR_RETURN_INSTRUCTION
 
 root_agent = Agent(
     name="sabio_irc",
@@ -56,5 +60,6 @@ root_agent = Agent(
     ),
     instruction=INSTRUCTION,
     tools=[now, resolve, search_irc, get_irc_event, get_irc_context],
+    disallow_transfer_to_peers=True,
     after_model_callback=redact_agent_names,
 )

@@ -5,7 +5,7 @@ from google.adk.models.lite_llm import LiteLlm
 from agents.comms.agent import root_agent as comms_agent
 from agents.irc.agent import root_agent as irc_agent
 from agents.repos.agent import root_agent as repos_agent
-from agents.shared.guardrails import redact_agent_names
+from agents.shared.guardrails import redact_agent_names, serialize_agent_transfers
 from agents.shared.tools import now, search_web
 
 load_dotenv()
@@ -73,11 +73,21 @@ Research workflow
      an answer that only checked discussion archives -- is answered by using the next
      specialist in this same turn, not by describing it as something you could do and
      waiting for the user to say go ahead. The user already asked the question once.
+   - Agent transfers are strictly sequential. Never emit more than one
+     transfer_to_agent call in the same model response: ADK can run ordinary tools in
+     parallel, but only one transfer destination can be active. Transfer to exactly one
+     required specialist, wait for it to research and return control, then transfer to
+     the next required specialist in a later model response. Track which evidence paths
+     have already completed so you do not repeat them.
 
 3. Treat specialist search results as research material, not permission to fill gaps
    from memory. If a specialist reports insufficient evidence, narrow the question,
    try another relevant specialist, or clearly state what could not be established.
    Do not silently replace missing primary evidence with general model knowledge.
+   A null transfer response is control-flow bookkeeping, not evidence that research
+   failed. Inspect the specialist's actual tool results. If no relevant tool call ran,
+   retry the evidence path or use another applicable tool in the same turn; never tell
+   the user to rerun the query or provide a source you can search for yourself.
 
 4. Use search_web as a complementary research tool when it materially enriches the
    answer or supplies evidence that Sabio's configured Bitcoin repositories and
@@ -169,5 +179,5 @@ root_agent = Agent(
     instruction=INSTRUCTION,
     tools=[now, search_web],
     sub_agents=[repos_agent, comms_agent, irc_agent],
-    after_model_callback=redact_agent_names,
+    after_model_callback=[serialize_agent_transfers, redact_agent_names],
 )

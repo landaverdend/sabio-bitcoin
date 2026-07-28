@@ -1,6 +1,6 @@
 from google.genai import types
 
-from agents.shared.guardrails import redact_agent_names
+from agents.shared.guardrails import redact_agent_names, serialize_agent_transfers
 
 
 def _response(*texts: str):
@@ -64,3 +64,73 @@ def test_handles_response_with_no_content():
     from google.adk.models.llm_response import LlmResponse
 
     assert redact_agent_names(None, LlmResponse()) is None
+
+
+def test_keeps_only_first_transfer_call_in_one_model_response():
+    from google.adk.models.llm_response import LlmResponse
+
+    response = LlmResponse(
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(
+                        name="transfer_to_agent",
+                        args={"agent_name": "sabio_repos"},
+                    )
+                ),
+                types.Part(
+                    function_call=types.FunctionCall(
+                        name="transfer_to_agent",
+                        args={"agent_name": "sabio_comms"},
+                    )
+                ),
+                types.Part(
+                    function_call=types.FunctionCall(
+                        name="transfer_to_agent",
+                        args={"agent_name": "sabio_irc"},
+                    )
+                ),
+            ],
+        )
+    )
+
+    assert serialize_agent_transfers(None, response) is None
+    calls = [
+        part.function_call
+        for part in response.content.parts
+        if part.function_call is not None
+    ]
+    assert len(calls) == 1
+    assert calls[0].args["agent_name"] == "sabio_repos"
+
+
+def test_transfer_guard_preserves_parallel_non_transfer_tools():
+    from google.adk.models.llm_response import LlmResponse
+
+    response = LlmResponse(
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(
+                        name="search_web",
+                        args={"query": "current BIP-119 status"},
+                    )
+                ),
+                types.Part(
+                    function_call=types.FunctionCall(
+                        name="transfer_to_agent",
+                        args={"agent_name": "sabio_repos"},
+                    )
+                ),
+            ],
+        )
+    )
+
+    serialize_agent_transfers(None, response)
+
+    assert [part.function_call.name for part in response.content.parts] == [
+        "search_web",
+        "transfer_to_agent",
+    ]

@@ -3,6 +3,7 @@ from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
 from agents.shared.guardrails import redact_agent_names
+from agents.shared.instructions import COORDINATOR_RETURN_INSTRUCTION
 from agents.shared.resolve import resolve
 from agents.shared.tools import now, search_web
 
@@ -81,7 +82,7 @@ GitHub, so do not cite a path you have not actually read.
 If read_file returns an error with total_lines, correct the requested range
 and retry. A line just past EOF is an input mistake, not evidence that the
 file or code does not exist.
-"""
+""" + COORDINATOR_RETURN_INSTRUCTION
 
 root_agent = Agent(
     name="sabio_repos",
@@ -108,5 +109,6 @@ root_agent = Agent(
         read_file,
         search_code,
     ],
+    disallow_transfer_to_peers=True,
     after_model_callback=redact_agent_names,
 )

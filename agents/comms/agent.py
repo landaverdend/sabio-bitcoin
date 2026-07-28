@@ -3,6 +3,7 @@ from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
 from agents.shared.guardrails import redact_agent_names
+from agents.shared.instructions import COORDINATOR_RETURN_INSTRUCTION
 from agents.shared.resolve import resolve
 from agents.shared.tools import now, search_web
 
@@ -52,7 +53,7 @@ retrieve the full evidence with get_message. Sabio's UI automatically turns succ
 full-message results into source cards with archived excerpts and original-source
 URLs. If no relevant full message can be retrieved, say that no reliable source was
 found instead of answering from memory. Never invent or guess a source URL.
-"""
+""" + COORDINATOR_RETURN_INSTRUCTION
 
 root_agent = Agent(
     name="sabio_comms",
@@ -71,5 +72,6 @@ root_agent = Agent(
         get_thread,
         search_messages,
     ],
+    disallow_transfer_to_peers=True,
     after_model_callback=redact_agent_names,
 )

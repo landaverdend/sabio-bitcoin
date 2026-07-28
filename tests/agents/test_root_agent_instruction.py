@@ -24,3 +24,13 @@ def test_user_claims_are_verified_as_leads():
         in NORMALIZED_INSTRUCTION
     )
     assert "current affiliation claim in the question" in NORMALIZED_INSTRUCTION
+
+
+def test_multi_source_research_serializes_agent_transfers_and_retries():
+    assert "Agent transfers are strictly sequential" in NORMALIZED_INSTRUCTION
+    assert (
+        "Never emit more than one transfer_to_agent call"
+        in NORMALIZED_INSTRUCTION
+    )
+    assert "A null transfer response is control-flow bookkeeping" in NORMALIZED_INSTRUCTION
+    assert "never tell the user to rerun the query" in NORMALIZED_INSTRUCTION
