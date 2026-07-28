@@ -1,6 +1,7 @@
 """Translate persisted Google ADK events into Sabio's frontend event shape."""
 
 import base64
+from urllib.parse import urlparse
 
 from google.adk.events.event import Event
 
@@ -97,7 +98,7 @@ def source_reference(response: dict) -> dict | None:
 
 
 def communication_reference(response: dict) -> dict | None:
-    """Build a citable archive reference from get_message's full result."""
+    """Build a citable archive reference from one complete message result."""
     message_id = response.get("id")
     channel = response.get("channel")
     body = response.get("body")
@@ -133,6 +134,97 @@ def communication_reference(response: dict) -> dict | None:
             else None
         ),
         "excerpt": excerpt,
+        "source_url": url,
+    }
+
+
+def irc_context_references(response: dict) -> list[dict]:
+    """Build source cards for each validated event in get_irc_context."""
+    raw_events = response.get("events")
+    if not isinstance(raw_events, list):
+        return []
+
+    references = []
+    seen_ids: set[str] = set()
+    for event in raw_events[:25]:
+        if not isinstance(event, dict):
+            continue
+        reference = communication_reference(event)
+        if reference is None or reference["message_id"] in seen_ids:
+            continue
+        seen_ids.add(reference["message_id"])
+        references.append(reference)
+    return references
+
+
+def github_discussion_reference(response: dict) -> dict | None:
+    """Build a source event from one exact get_pr_discussion_item result."""
+    repo = response.get("repo")
+    pr_number = response.get("pr_number")
+    kind = response.get("kind")
+    item_id = response.get("id")
+    body = response.get("body")
+    url = response.get("url")
+    url_host = urlparse(url).hostname if isinstance(url, str) else None
+
+    if not isinstance(repo, str) or not repo:
+        return None
+    if (
+        not isinstance(pr_number, int)
+        or isinstance(pr_number, bool)
+        or pr_number < 1
+    ):
+        return None
+    if kind not in {
+        "pull_request",
+        "conversation_comment",
+        "review",
+        "review_comment",
+    }:
+        return None
+    if not isinstance(item_id, (int, str)) or isinstance(item_id, bool):
+        return None
+    if not isinstance(body, str) or not body.strip():
+        return None
+    if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        return None
+    if url_host not in {"github.com", "www.github.com"}:
+        return None
+
+    compact_body = " ".join(body.split())
+    excerpt = compact_body[:360]
+    if len(compact_body) > len(excerpt):
+        excerpt += "…"
+
+    line = response.get("line")
+    return {
+        "type": "github_discussion_source",
+        "repo": repo,
+        "pr_number": pr_number,
+        "pr_title": (
+            response.get("pr_title")
+            if isinstance(response.get("pr_title"), str)
+            else None
+        ),
+        "kind": kind,
+        "item_id": str(item_id),
+        "author": (
+            response.get("author") if isinstance(response.get("author"), str) else None
+        ),
+        "created_at": (
+            response.get("created_at")
+            if isinstance(response.get("created_at"), str)
+            else None
+        ),
+        "excerpt": excerpt,
+        "path": (
+            response.get("path") if isinstance(response.get("path"), str) else None
+        ),
+        "line": (
+            line
+            if isinstance(line, int) and not isinstance(line, bool) and line > 0
+            else None
+        ),
         "source_url": url,
     }
 
@@ -243,8 +335,14 @@ def event_payloads(event: Event) -> list[dict]:
                 source = source_reference(response)
                 if source is not None:
                     payloads.append(source)
-            elif part.function_response.name == "get_message":
+            elif part.function_response.name in {"get_message", "get_irc_event"}:
                 source = communication_reference(response)
+                if source is not None:
+                    payloads.append(source)
+            elif part.function_response.name == "get_irc_context":
+                payloads.extend(irc_context_references(response))
+            elif part.function_response.name == "get_pr_discussion_item":
+                source = github_discussion_reference(response)
                 if source is not None:
                     payloads.append(source)
             elif part.function_response.name == "search_web":

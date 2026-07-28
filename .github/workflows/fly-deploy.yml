@@ -16,9 +16,8 @@ jobs:
       - run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      # jobs/sync_bitcointalk and jobs/sync_mailing_list run on their own
-      # scheduled Machines (sync-bitcointalk, sync-mailing-list), kept off
-      # the web app's machine entirely so a 25-30 min sync never competes
+      # Recurring ingestion jobs run on their own scheduled Machines, kept
+      # off the web app's machine entirely so a long sync never competes
       # with it for CPU/memory.
       # Those Machines pin a specific image tag at creation time and don't
       # follow deploys on their own, so every deploy has to explicitly push
@@ -29,7 +28,7 @@ jobs:
           set -euo pipefail
           MACHINES=$(flyctl machine list --app sabio-bitcoin --json)
           IMAGE=$(echo "$MACHINES" | jq -r '.[] | select(.config.metadata.fly_process_group == "app") | "\(.image_ref.registry)/\(.image_ref.repository):\(.image_ref.tag)"')
-          for NAME in sync-bitcointalk sync-mailing-list; do
+          for NAME in sync-bitcointalk sync-mailing-list sync-irc; do
             ID=$(echo "$MACHINES" | jq -r --arg name "$NAME" '.[] | select(.name == $name) | .id')
             flyctl machine update "$ID" --image "$IMAGE" --app sabio-bitcoin --yes
           done

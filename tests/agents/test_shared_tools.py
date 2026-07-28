@@ -101,3 +101,32 @@ def test_search_web_rejects_unbounded_queries_without_an_api_call():
 
     assert "error" in result
     assert result["sources"] == []
+
+
+def test_search_web_returns_an_error_instead_of_raising_on_api_failure():
+    """Must never raise: ADK persists the "search_web was called" turn to the
+    session before this resolves, so an uncaught exception here leaves that
+    tool_call permanently unanswered -- every later turn in the session then
+    fails outright, regardless of what actually caused the original failure
+    (bad model name, rate limit, timeout, ...)."""
+
+    class FailingResponses:
+        async def create(self, **_kwargs):
+            raise RuntimeError("boom")
+
+    class FakeClient:
+        def __init__(self, **_):
+            self.responses = FailingResponses()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+    with patch.object(tools, "AsyncOpenAI", FakeClient):
+        result = asyncio.run(tools.search_web("anything"))
+
+    assert result["answer"] == ""
+    assert result["sources"] == []
+    assert "boom" in result["error"]

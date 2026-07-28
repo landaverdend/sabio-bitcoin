@@ -12,6 +12,7 @@ from backend.auth import router as auth_router
 from backend.chat import close_session_storage
 from backend.chat import router as chat_router
 from backend.comms import router as comms_router
+from backend.irc import router as irc_router
 from backend.people import router as people_router
 from backend.repo import router as repo_router
 
@@ -44,6 +45,7 @@ app.include_router(auth_router)
 app.include_router(repo_router)
 app.include_router(chat_router)
 app.include_router(comms_router)
+app.include_router(irc_router)
 app.include_router(people_router)
 
 

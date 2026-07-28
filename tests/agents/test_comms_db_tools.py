@@ -8,9 +8,7 @@ def _run_query_returning(rows):
 
 
 class TestSearchMessagesPersonId:
-    """person_id filtering needs to expand to every row in that person's
-    canonical group (db/migrations/0008), not just the exact id passed in --
-    see agents/shared/resolve.py's MEMBER_IDS_CTE."""
+    """person_id filtering expands to every row in the canonical group."""
 
     def test_person_id_filter_expands_to_canonical_group(self):
         with _run_query_returning([]) as run_query:
@@ -32,7 +30,11 @@ class TestSearchMessagesPersonId:
 
     def test_person_id_combines_with_other_filters(self):
         with _run_query_returning([]) as run_query:
-            db_tools.search_messages(person_id=8381, query="segwit", after="2015-01-01")
+            db_tools.search_messages(
+                person_id=8381,
+                query="segwit",
+                after="2015-01-01",
+            )
 
         sql, params = run_query.call_args.args
         assert "person_id IN (SELECT id FROM member_ids)" in sql

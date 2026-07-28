@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query"
 
+import { getAnonId } from "@/lib/anon-id"
+
 export type CommunicationMessage = {
-  id: number
+  id: number | string
   channel: string
   external_id: string
   author: string | null
@@ -15,8 +17,12 @@ export type CommunicationMessage = {
 }
 
 async function fetchCommunicationMessage(messageId: string): Promise<CommunicationMessage> {
-  const res = await fetch(`/comms/messages/${encodeURIComponent(messageId)}`, {
+  const path = messageId.startsWith("irc_event:")
+    ? `/irc/events/${encodeURIComponent(messageId)}`
+    : `/comms/messages/${encodeURIComponent(messageId)}`
+  const res = await fetch(path, {
     credentials: "include",
+    headers: { "X-Anon-Id": getAnonId() },
   })
   if (!res.ok) {
     throw new Error(`failed to fetch archived message: ${res.status}`)

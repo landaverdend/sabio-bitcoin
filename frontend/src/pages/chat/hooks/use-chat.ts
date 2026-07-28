@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import { getAnonId } from "@/lib/anon-id"
 import {
   translate,
   useLocale,
@@ -46,11 +47,26 @@ export type WebReference = {
   sourceUrl: string
 }
 
+export type GitHubDiscussionReference = {
+  repo: string
+  prNumber: number
+  prTitle: string | null
+  kind: "pull_request" | "conversation_comment" | "review" | "review_comment"
+  itemId: string
+  author: string | null
+  createdAt: string | null
+  excerpt: string
+  path: string | null
+  line: number | null
+  sourceUrl: string
+}
+
 export type ChatBlock =
   | { type: "text"; text: string }
   | { type: "tool"; tool: string; label: string; icon: LucideIcon; calls: ToolCall[] }
   | { type: "source"; source: SourceReference }
   | { type: "communication_source"; source: CommunicationReference }
+  | { type: "github_discussion_source"; source: GitHubDiscussionReference }
   | { type: "web_source"; source: WebReference }
 
 // A file or highlighted excerpt attached from the code panel -- content is
@@ -125,6 +141,15 @@ const TOOL_META: Record<string, { labelKey: TranslationKey; icon: LucideIcon }> 
   get_commits: { labelKey: "toolCommits", icon: GitCommitHorizontal },
   get_open_prs: { labelKey: "toolOpenPrs", icon: GitPullRequest },
   get_pr_detail: { labelKey: "toolReadPr", icon: GitPullRequest },
+  search_prs: { labelKey: "toolSearchPrs", icon: GitPullRequest },
+  search_pr_discussion: {
+    labelKey: "toolSearchPrDiscussion",
+    icon: MessageSquare,
+  },
+  get_pr_discussion_item: {
+    labelKey: "toolReadPrDiscussion",
+    icon: MessageSquare,
+  },
   get_issues: { labelKey: "toolIssues", icon: TicketCheck },
   get_contributor_stats: { labelKey: "toolContributors", icon: Users },
   list_directory: { labelKey: "toolBrowseFiles", icon: Folder },
@@ -138,6 +163,9 @@ const TOOL_META: Record<string, { labelKey: TranslationKey; icon: LucideIcon }> 
   // one query, so a channel-specific label here would misrepresent what was
   // actually searched.
   search_messages: { labelKey: "toolSearchDiscussions", icon: Search },
+  search_irc: { labelKey: "toolSearchIrc", icon: Search },
+  get_irc_event: { labelKey: "toolReadIrcMessage", icon: MessageSquare },
+  get_irc_context: { labelKey: "toolReadIrcContext", icon: MessageSquare },
   search_web: { labelKey: "toolSearchWeb", icon: Globe2 },
   now: { labelKey: "toolCurrentTime", icon: Globe2 },
 }
@@ -162,6 +190,9 @@ const DETAIL_ARG: Record<string, string> = {
   get_commits: "repo_name",
   get_open_prs: "repo_name",
   get_pr_detail: "repo_name",
+  search_prs: "query",
+  search_pr_discussion: "query",
+  get_pr_discussion_item: "item_id",
   get_issues: "repo_name",
   get_contributor_stats: "repo_name",
   list_directory: "path",
@@ -171,12 +202,17 @@ const DETAIL_ARG: Record<string, string> = {
   get_message: "message_id",
   get_thread: "message_id",
   search_messages: "query",
+  search_irc: "query",
+  get_irc_event: "event_id",
+  get_irc_context: "event_id",
   search_web: "query",
 }
 
 function toolCallDetail(tool: string, args: Record<string, unknown>): string | undefined {
   const value = args[DETAIL_ARG[tool]]
-  return typeof value === "string" ? value : undefined
+  if (typeof value === "string") return value
+  if (typeof value === "number") return String(value)
+  return undefined
 }
 
 type StreamEvent =
@@ -210,6 +246,20 @@ type StreamEvent =
       source_url: string
     }
   | {
+      type: "github_discussion_source"
+      repo: string
+      pr_number: number
+      pr_title: string | null
+      kind: "pull_request" | "conversation_comment" | "review" | "review_comment"
+      item_id: string
+      author: string | null
+      created_at: string | null
+      excerpt: string
+      path: string | null
+      line: number | null
+      source_url: string
+    }
+  | {
       type: "web_source"
       title: string
       source_url: string
@@ -238,6 +288,24 @@ function communicationReference(
     title: event.title,
     postedAt: event.posted_at,
     excerpt: event.excerpt,
+    sourceUrl: event.source_url,
+  }
+}
+
+function githubDiscussionReference(
+  event: Extract<StreamEvent, { type: "github_discussion_source" }>,
+): GitHubDiscussionReference {
+  return {
+    repo: event.repo,
+    prNumber: event.pr_number,
+    prTitle: event.pr_title,
+    kind: event.kind,
+    itemId: event.item_id,
+    author: event.author,
+    createdAt: event.created_at,
+    excerpt: event.excerpt,
+    path: event.path,
+    line: event.line,
     sourceUrl: event.source_url,
   }
 }
@@ -308,6 +376,11 @@ function reduceEvents(events: StreamEvent[], t: Translator): ChatMessage[] {
         type: "communication_source",
         source: communicationReference(event),
       })
+    } else if (event.type === "github_discussion_source") {
+      blocks.push({
+        type: "github_discussion_source",
+        source: githubDiscussionReference(event),
+      })
     } else if (event.type === "web_source") {
       blocks.push({ type: "web_source", source: webReference(event) })
     }
@@ -318,8 +391,19 @@ function reduceEvents(events: StreamEvent[], t: Translator): ChatMessage[] {
   return messages
 }
 
+// Sent on every /chat, /comms, and /irc request -- the backend uses this to scope
+// anonymous (not logged into Nostr) sessions, and ignores it for logged-in
+// requests where the session cookie already carries a pubkey.
+function anonIdHeaders(): Record<string, string> {
+  return { "X-Anon-Id": getAnonId() }
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { credentials: "include", ...init })
+  const res = await fetch(url, {
+    credentials: "include",
+    ...init,
+    headers: { ...anonIdHeaders(), ...init?.headers },
+  })
   const contentType = res.headers.get("content-type") ?? ""
 
   if (!contentType.toLowerCase().includes("application/json")) {
@@ -346,7 +430,12 @@ async function fetchSessionMessages(sessionId: string, t: Translator): Promise<C
   return reduceEvents(result.events, t)
 }
 
-export function useChat(pubkey: string | null, restoreLatest = true) {
+// identityKey is whatever currently scopes chat sessions server-side -- the
+// Nostr pubkey once logged in, otherwise the anonymous per-browser id (see
+// getAnonId). It's just used to detect an identity change below; the actual
+// value sent to the backend is resolved fresh on each request via cookie +
+// X-Anon-Id, not passed through here.
+export function useChat(identityKey: string, restoreLatest = true) {
   const { locale, t } = useLocale()
   const localeRef = useRef(locale)
   localeRef.current = locale
@@ -364,9 +453,9 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
     runId: string
   } | null>(null)
 
-  // Restore the most recently active conversation after auth resolves. A
-  // pubkey change is a hard tenant boundary: clear the prior user's local
-  // state before fetching anything for the new identity.
+  // Restore the most recently active conversation. An identity change (e.g.
+  // logging into Nostr mid-session) is a hard tenant boundary: clear the
+  // prior identity's local state before fetching anything for the new one.
   useEffect(() => {
     let cancelled = false
     setMessages([])
@@ -374,7 +463,7 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
     setSessionId(crypto.randomUUID())
     setSessionError(null)
 
-    if (!pubkey || !restoreLatest) {
+    if (!restoreLatest) {
       setIsLoadingHistory(false)
       return () => {
         cancelled = true
@@ -413,10 +502,10 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
     return () => {
       cancelled = true
     }
-  }, [pubkey, restoreLatest])
+  }, [identityKey, restoreLatest])
 
   const refreshSessions = useCallback(async () => {
-    if (!pubkey || !restoreLatest) return
+    if (!restoreLatest) return
     try {
       setSessions(await fetchSessions())
     } catch (err) {
@@ -426,22 +515,20 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
           : translate(localeRef.current, "errorRefreshConversations"),
       )
     }
-  }, [pubkey, restoreLatest])
+  }, [restoreLatest])
 
   useEffect(() => {
     setMessages((current) =>
-      current.map((message) =>
-        message.role === "assistant"
-          ? {
-              ...message,
-              blocks: message.blocks.map((block) =>
-                block.type === "tool"
-                  ? { ...block, label: toolMeta(block.tool, t).label }
-                  : block,
-              ),
-            }
-          : message,
-      ),
+      current.map((message) => {
+        if (message.role !== "assistant") return message
+        return {
+          ...message,
+          blocks: message.blocks.map((block) => {
+            if (block.type !== "tool") return block
+            return { ...block, label: toolMeta(block.tool, t).label }
+          }),
+        }
+      }),
     )
   }, [t])
 
@@ -629,8 +716,8 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
       try {
         const res = await fetch("/chat/stream", {
           method: "POST",
-          credentials: "include", // the login (Nostr auth) session cookie
-          headers: { "Content-Type": "application/json" },
+          credentials: "include", // the login (Nostr auth) session cookie, if any
+          headers: { "Content-Type": "application/json", ...anonIdHeaders() },
           signal: controller.signal,
           body: JSON.stringify({
             session_id: sessionId,
@@ -711,6 +798,11 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
                 type: "communication_source",
                 source: communicationReference(event),
               })
+            } else if (event.type === "github_discussion_source") {
+              appendBlock({
+                type: "github_discussion_source",
+                source: githubDiscussionReference(event),
+              })
             } else if (event.type === "web_source") {
               appendBlock({ type: "web_source", source: webReference(event) })
             } else if (event.type === "error") {
@@ -763,7 +855,7 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
     void fetch("/chat/stop", {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...anonIdHeaders() },
       body: JSON.stringify({
         session_id: sessionId,
         run_id: activeRun.runId,

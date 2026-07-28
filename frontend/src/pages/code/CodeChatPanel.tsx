@@ -2,6 +2,7 @@ import { ArrowUp, Square, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { getAnonId } from "@/lib/anon-id"
 import { useAuth } from "@/lib/auth"
 import { useLocale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -35,11 +36,10 @@ export function CodeChatPanel({
   openPaths,
   onAddFile,
 }: CodeChatPanelProps) {
-  const { pubkey, login } = useAuth()
+  const { pubkey } = useAuth()
   const { t } = useLocale()
-  const { messages, sendMessage, stopStreaming, isStreaming } = useChat(pubkey, false)
+  const { messages, sendMessage, stopStreaming, isStreaming } = useChat(pubkey ?? getAnonId(), false)
   const [input, setInput] = useState("")
-  const [authError, setAuthError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -57,11 +57,6 @@ export function CodeChatPanel({
     // CodePage's handleAddFile) -- sending before it arrives would attach
     // an empty excerpt instead of what was actually picked.
     if ((!text && contextItems.length === 0) || isStreaming || hasPendingContext) return
-    if (!pubkey) {
-      setAuthError(null)
-      login().catch((err: Error) => setAuthError(err.message))
-      return
-    }
     setInput("")
     void sendMessage(text || t("explainAttachedCode"), contextItems)
     onClearContext()
@@ -98,7 +93,6 @@ export function CodeChatPanel({
       </div>
 
       <div className="border-t p-3">
-        {authError && <p className="mb-2 text-xs text-destructive">{authError}</p>}
         {contextItems.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {contextItems.map((item) => (

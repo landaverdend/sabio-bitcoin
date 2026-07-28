@@ -391,6 +391,232 @@ def test_search_result_does_not_become_final_communication_source():
     ]
 
 
+def test_get_irc_event_result_becomes_communication_source():
+    response = {
+        "id": "irc_event:42",
+        "channel": "bitcoin-core-dev",
+        "author": "fanquake",
+        "title": "#bitcoin-core-dev IRC — 2026-07-28",
+        "body": "also included #25573",
+        "url": "https://gnusha.org/bitcoin-core-dev/2026-07-28.log",
+        "posted_at": "2026-07-28T17:30:00+00:00",
+    }
+    event = Event(
+        author="sabio_irc",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="get_irc_event",
+                    response=response,
+                )
+            ],
+        ),
+    )
+
+    assert chat_events.event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_irc",
+            "tool": "get_irc_event",
+        },
+        {
+            "type": "communication_source",
+            "message_id": "irc_event:42",
+            "channel": "bitcoin-core-dev",
+            "author": "fanquake",
+            "title": "#bitcoin-core-dev IRC — 2026-07-28",
+            "posted_at": "2026-07-28T17:30:00+00:00",
+            "excerpt": "also included #25573",
+            "source_url": response["url"],
+        },
+    ]
+
+
+def test_get_irc_context_result_becomes_multiple_communication_sources():
+    source_url = "https://gnusha.org/bitcoin-core-dev/2026-07-28.log"
+    response = {
+        "focus_id": "irc_event:42",
+        "channel": "bitcoin-core-dev",
+        "events": [
+            {
+                "id": "irc_event:41",
+                "channel": "bitcoin-core-dev",
+                "author": "darosior",
+                "title": "#bitcoin-core-dev IRC — 2026-07-28",
+                "body": "Did you run the others with prune too?",
+                "url": source_url,
+                "posted_at": "2026-07-28T17:29:00+00:00",
+            },
+            {
+                "id": "irc_event:42",
+                "channel": "bitcoin-core-dev",
+                "author": "fanquake",
+                "title": "#bitcoin-core-dev IRC — 2026-07-28",
+                "body": "also included #25573",
+                "url": source_url,
+                "posted_at": "2026-07-28T17:30:00+00:00",
+            },
+        ],
+    }
+    event = Event(
+        author="sabio_irc",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="get_irc_context",
+                    response=response,
+                )
+            ],
+        ),
+    )
+
+    payloads = chat_events.event_payloads(event)
+
+    assert payloads[0] == {
+        "type": "tool_result",
+        "author": "sabio_irc",
+        "tool": "get_irc_context",
+    }
+    assert [payload["message_id"] for payload in payloads[1:]] == [
+        "irc_event:41",
+        "irc_event:42",
+    ]
+    assert all(
+        payload["type"] == "communication_source" for payload in payloads[1:]
+    )
+
+
+def test_search_irc_result_does_not_become_final_communication_source():
+    event = Event(
+        author="sabio_irc",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="search_irc",
+                    response={
+                        "result": [
+                            {
+                                "id": "irc_event:42",
+                                "snippet": "discovery is not full evidence",
+                            }
+                        ]
+                    },
+                )
+            ],
+        ),
+    )
+
+    assert chat_events.event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_irc",
+            "tool": "search_irc",
+        }
+    ]
+
+
+def test_get_pr_discussion_item_becomes_github_source():
+    response = {
+        "repo": "bitcoin/bitcoin",
+        "pr_number": 28984,
+        "pr_title": "Add package relay",
+        "kind": "review_comment",
+        "id": 1776,
+        "author": "glozow",
+        "body": "  This checks package relay.\n\nThe second paragraph adds context.  ",
+        "path": "src/net_processing.cpp",
+        "line": 700,
+        "created_at": "2026-07-01T12:00:00+00:00",
+        "url": "https://github.com/bitcoin/bitcoin/pull/28984#discussion_r1776",
+    }
+    event = Event(
+        author="sabio_repos",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="get_pr_discussion_item",
+                    response=response,
+                )
+            ],
+        ),
+    )
+
+    assert chat_events.event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_repos",
+            "tool": "get_pr_discussion_item",
+        },
+        {
+            "type": "github_discussion_source",
+            "repo": "bitcoin/bitcoin",
+            "pr_number": 28984,
+            "pr_title": "Add package relay",
+            "kind": "review_comment",
+            "item_id": "1776",
+            "author": "glozow",
+            "created_at": "2026-07-01T12:00:00+00:00",
+            "excerpt": (
+                "This checks package relay. The second paragraph adds context."
+            ),
+            "path": "src/net_processing.cpp",
+            "line": 700,
+            "source_url": response["url"],
+        },
+    ]
+
+
+def test_pr_discussion_search_result_does_not_become_final_source():
+    event = Event(
+        author="sabio_repos",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="search_pr_discussion",
+                    response={
+                        "result": [
+                            {
+                                "kind": "conversation_comment",
+                                "id": 42,
+                                "excerpt": "Discovery text is not the exact read.",
+                            }
+                        ]
+                    },
+                )
+            ],
+        ),
+    )
+
+    assert chat_events.event_payloads(event) == [
+        {
+            "type": "tool_result",
+            "author": "sabio_repos",
+            "tool": "search_pr_discussion",
+        }
+    ]
+
+
+def test_github_discussion_reference_rejects_non_github_urls():
+    assert (
+        chat_events.github_discussion_reference(
+            {
+                "repo": "bitcoin/bitcoin",
+                "pr_number": 42,
+                "kind": "conversation_comment",
+                "id": 7,
+                "body": "Looks plausible.",
+                "url": "https://example.com/fake-github-source",
+            }
+        )
+        is None
+    )
+
+
 def test_search_web_result_becomes_clickable_web_sources():
     response = {
         "answer": "A sourced answer.",

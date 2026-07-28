@@ -1,5 +1,6 @@
 import { ChevronLeft, ExternalLink, GitCommitHorizontal, Search } from "lucide-react"
 import { useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 
 import { ListSkeleton } from "@/components/ListRowSkeleton"
@@ -147,6 +148,175 @@ export default function PersonDetailPage() {
     translate("unknown"),
   )
 
+  const noCommitsLabel = commitQuery
+    ? translate("noMatchingCommits", { query: commitQuery })
+    : translate("noCommitsFound")
+  const noMessagesLabel = messageQuery
+    ? translate("noMatchingPosts", { query: messageQuery })
+    : translate("noPostsFound")
+
+  let commitListContent: ReactNode
+  if (commitsLoading && commits.length === 0) {
+    commitListContent = <ListSkeleton rows={5} trailing />
+  } else {
+    commitListContent = (
+      <>
+        {commits.map((commit, index) => (
+          <Link
+            key={commit.sha}
+            to={`/code/commit/${commit.sha}`}
+            className={`flex items-center gap-3 px-4 py-3 hover:bg-accent ${index > 0 ? "border-t" : ""}`}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{commit.message}</p>
+              <p className="text-xs text-muted-foreground">
+                {translate("committed", {
+                  date: formatRelativeDate(commit.date, locale),
+                })}
+              </p>
+            </div>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {commit.short_sha}
+            </span>
+          </Link>
+        ))}
+        {commits.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+            {noCommitsLabel}
+          </p>
+        )}
+      </>
+    )
+  }
+
+  let messageListContent: ReactNode
+  if (messagesLoading && messages.length === 0) {
+    messageListContent = <ListSkeleton rows={5} lines={3} />
+  } else {
+    messageListContent = (
+      <>
+        {messages.map((message, index) => (
+          <a
+            key={message.id}
+            href={message.url}
+            target="_blank"
+            rel="noreferrer"
+            className={`flex items-start gap-3 px-4 py-3 hover:bg-accent ${index > 0 ? "border-t" : ""}`}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">
+                {message.title || translate("noSubject")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatRelativeDate(message.posted_at, locale)}
+              </p>
+              {message.snippet && (
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {message.snippet}
+                </p>
+              )}
+            </div>
+            <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+          </a>
+        ))}
+        {messages.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+            {noMessagesLabel}
+          </p>
+        )}
+      </>
+    )
+  }
+
+  let activityContent: ReactNode
+  if (tabs.length === 0) {
+    activityContent = (
+      <p className="text-sm text-muted-foreground">{translate("noActivity")}</p>
+    )
+  } else {
+    activityContent = (
+      <Tabs value={activeTab} onValueChange={(value) => selectTab(value as string)}>
+        <TabsList>
+          {tabs.map((tab) => (
+            <TabsTab key={tab.key} value={tab.key}>
+              {tab.key === COMMITS_TAB && (
+                <GitCommitHorizontal className="size-3.5" />
+              )}
+              {tab.label}
+              <span className="text-xs text-muted-foreground">
+                {tab.count.toLocaleString(locale)}
+              </span>
+            </TabsTab>
+          ))}
+        </TabsList>
+
+        {tabs.map((tab) => {
+          if (tab.key === COMMITS_TAB) {
+            return (
+              <TabsPanel key={tab.key} value={tab.key}>
+                <div className="mb-3 flex max-w-sm items-center gap-2 rounded-md border px-2.5 py-1.5">
+                  <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                  <input
+                    value={commitSearch}
+                    onChange={(event) => {
+                      setCommitSearch(event.target.value)
+                      setCommitPageCount(1)
+                    }}
+                    placeholder={translate("searchCommitMessages")}
+                    className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
+                <div className="overflow-hidden rounded-md border">
+                  {commitListContent}
+                </div>
+                {hasMoreCommits && (
+                  <Button
+                    variant="outline"
+                    className="mt-3"
+                    disabled={commitsLoading}
+                    onClick={() => setCommitPageCount((count) => count + 1)}
+                  >
+                    {commitsLoading ? translate("loading") : translate("loadMore")}
+                  </Button>
+                )}
+              </TabsPanel>
+            )
+          }
+
+          return (
+            <TabsPanel key={tab.key} value={tab.key}>
+              <div className="mb-3 flex max-w-sm items-center gap-2 rounded-md border px-2.5 py-1.5">
+                <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                <input
+                  value={messageSearch}
+                  onChange={(event) => {
+                    setMessageSearch(event.target.value)
+                    setMessagePageCount(1)
+                  }}
+                  placeholder={translate("searchIn", { label: tab.label })}
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="overflow-hidden rounded-md border">
+                {messageListContent}
+              </div>
+              {hasMoreMessages && (
+                <Button
+                  variant="outline"
+                  className="mt-3"
+                  disabled={messagesLoading}
+                  onClick={() => setMessagePageCount((count) => count + 1)}
+                >
+                  {messagesLoading ? translate("loading") : translate("loadMore")}
+                </Button>
+              )}
+            </TabsPanel>
+          )
+        })}
+      </Tabs>
+    )
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       <div className="flex shrink-0 flex-col gap-4 border-b px-6 py-4">
@@ -181,150 +351,7 @@ export default function PersonDetailPage() {
       </div>
 
       <div className="flex-1 px-6 py-4">
-        {tabs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{translate("noActivity")}</p>
-        ) : (
-          <Tabs value={activeTab} onValueChange={(value) => selectTab(value as string)}>
-            <TabsList>
-              {tabs.map((t) => (
-                <TabsTab key={t.key} value={t.key}>
-                  {t.key === COMMITS_TAB && <GitCommitHorizontal className="size-3.5" />}
-                  {t.label}
-                  <span className="text-xs text-muted-foreground">
-                    {t.count.toLocaleString(locale)}
-                  </span>
-                </TabsTab>
-              ))}
-            </TabsList>
-
-            {tabs.map((t) => (
-              <TabsPanel key={t.key} value={t.key}>
-                {t.key === COMMITS_TAB ? (
-                  <>
-                    <div className="mb-3 flex max-w-sm items-center gap-2 rounded-md border px-2.5 py-1.5">
-                      <Search className="size-3.5 shrink-0 text-muted-foreground" />
-                      <input
-                        value={commitSearch}
-                        onChange={(e) => {
-                          setCommitSearch(e.target.value)
-                          setCommitPageCount(1)
-                        }}
-                        placeholder={translate("searchCommitMessages")}
-                        className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                      />
-                    </div>
-                    <div className="overflow-hidden rounded-md border">
-                      {commitsLoading && commits.length === 0 ? (
-                        <ListSkeleton rows={5} trailing />
-                      ) : (
-                        <>
-                          {commits.map((commit, i) => (
-                            <Link
-                              key={commit.sha}
-                              to={`/code/commit/${commit.sha}`}
-                              className={`flex items-center gap-3 px-4 py-3 hover:bg-accent ${i > 0 ? "border-t" : ""}`}
-                            >
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium">{commit.message}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {translate("committed", {
-                                    date: formatRelativeDate(commit.date, locale),
-                                  })}
-                                </p>
-                              </div>
-                              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                                {commit.short_sha}
-                              </span>
-                            </Link>
-                          ))}
-                          {commits.length === 0 && (
-                            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                              {commitQuery
-                                ? translate("noMatchingCommits", { query: commitQuery })
-                                : translate("noCommitsFound")}
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    {hasMoreCommits && (
-                      <Button
-                        variant="outline"
-                        className="mt-3"
-                        disabled={commitsLoading}
-                        onClick={() => setCommitPageCount((n) => n + 1)}
-                      >
-                        {commitsLoading ? translate("loading") : translate("loadMore")}
-                      </Button>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="mb-3 flex max-w-sm items-center gap-2 rounded-md border px-2.5 py-1.5">
-                      <Search className="size-3.5 shrink-0 text-muted-foreground" />
-                      <input
-                        value={messageSearch}
-                        onChange={(e) => {
-                          setMessageSearch(e.target.value)
-                          setMessagePageCount(1)
-                        }}
-                        placeholder={translate("searchIn", { label: t.label })}
-                        className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                      />
-                    </div>
-                    <div className="overflow-hidden rounded-md border">
-                      {messagesLoading && messages.length === 0 ? (
-                        <ListSkeleton rows={5} lines={3} />
-                      ) : (
-                        <>
-                          {messages.map((message, i) => (
-                            <a
-                              key={message.id}
-                              href={message.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={`flex items-start gap-3 px-4 py-3 hover:bg-accent ${i > 0 ? "border-t" : ""}`}
-                            >
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium">
-                                  {message.title || translate("noSubject")}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {formatRelativeDate(message.posted_at, locale)}
-                                </p>
-                                {message.snippet && (
-                                  <p className="mt-1 truncate text-xs text-muted-foreground">{message.snippet}</p>
-                                )}
-                              </div>
-                              <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
-                            </a>
-                          ))}
-                          {messages.length === 0 && (
-                            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                              {messageQuery
-                                ? translate("noMatchingPosts", { query: messageQuery })
-                                : translate("noPostsFound")}
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    {hasMoreMessages && (
-                      <Button
-                        variant="outline"
-                        className="mt-3"
-                        disabled={messagesLoading}
-                        onClick={() => setMessagePageCount((n) => n + 1)}
-                      >
-                        {messagesLoading ? translate("loading") : translate("loadMore")}
-                      </Button>
-                    )}
-                  </>
-                )}
-              </TabsPanel>
-            ))}
-          </Tabs>
-        )}
+        {activityContent}
       </div>
     </div>
   )

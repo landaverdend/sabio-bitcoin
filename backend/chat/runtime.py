@@ -61,8 +61,8 @@ def close_session_storage() -> None:
     _session_locks.clear()
 
 
-async def get_session_lock(pubkey: str, session_id: str) -> asyncio.Lock:
-    key = (pubkey, session_id)
+async def get_session_lock(user_id: str, session_id: str) -> asyncio.Lock:
+    key = (user_id, session_id)
     async with _session_locks_guard:
         lock = _session_locks.get(key)
         if lock is None:
@@ -71,17 +71,17 @@ async def get_session_lock(pubkey: str, session_id: str) -> asyncio.Lock:
         return lock
 
 
-async def remove_session_lock(pubkey: str, session_id: str) -> None:
+async def remove_session_lock(user_id: str, session_id: str) -> None:
     async with _session_locks_guard:
-        _session_locks.pop((pubkey, session_id), None)
+        _session_locks.pop((user_id, session_id), None)
 
 
 def register_active_run(
-    pubkey: str,
+    user_id: str,
     session_id: str,
     run_id: str,
 ) -> tuple[tuple[str, str, str], asyncio.Event]:
-    key = (pubkey, session_id, run_id)
+    key = (user_id, session_id, run_id)
     previous = _active_runs.get(key)
     if previous is not None:
         previous.set()
@@ -90,8 +90,8 @@ def register_active_run(
     return key, stop_event
 
 
-def stop_active_run(pubkey: str, session_id: str, run_id: str) -> bool:
-    stop_event = _active_runs.get((pubkey, session_id, run_id))
+def stop_active_run(user_id: str, session_id: str, run_id: str) -> bool:
+    stop_event = _active_runs.get((user_id, session_id, run_id))
     if stop_event is None:
         return False
     stop_event.set()
@@ -100,14 +100,14 @@ def stop_active_run(pubkey: str, session_id: str, run_id: str) -> bool:
 
 async def ensure_session(
     service: BaseSessionService,
-    pubkey: str,
+    user_id: str,
     session_id: str,
     message: str,
     locale: ChatLocale = "en",
 ) -> None:
     existing = await service.get_session(
         app_name=APP_NAME,
-        user_id=pubkey,
+        user_id=user_id,
         session_id=session_id,
     )
     if existing is not None:
@@ -119,14 +119,14 @@ async def ensure_session(
     try:
         await service.create_session(
             app_name=APP_NAME,
-            user_id=pubkey,
+            user_id=user_id,
             session_id=session_id,
             state={"title": title},
         )
     except IntegrityError:
         existing = await service.get_session(
             app_name=APP_NAME,
-            user_id=pubkey,
+            user_id=user_id,
             session_id=session_id,
         )
         if existing is None:
@@ -138,7 +138,7 @@ def encode_sse(payload: dict) -> str:
 
 
 async def stream(
-    pubkey: str,
+    user_id: str,
     session_id: str,
     message: str,
     context: list[ContextItem],
@@ -150,7 +150,7 @@ async def stream(
     attachments = attachments or []
     stop_event = stop_event or asyncio.Event()
     service, runner = get_session_runtime()
-    lock = await get_session_lock(pubkey, session_id)
+    lock = await get_session_lock(user_id, session_id)
     events = None
     next_event_task = None
     stop_task = None
@@ -159,12 +159,12 @@ async def stream(
         async with lock:
             if stop_event.is_set():
                 return
-            await ensure_session(service, pubkey, session_id, message, locale)
+            await ensure_session(service, user_id, session_id, message, locale)
             if stop_event.is_set():
                 return
 
             events = runner.run_async(
-                user_id=pubkey,
+                user_id=user_id,
                 session_id=session_id,
                 new_message=build_content(
                     message,

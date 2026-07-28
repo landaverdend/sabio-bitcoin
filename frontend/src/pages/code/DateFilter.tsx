@@ -83,8 +83,17 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
 
   const previewStart = pendingFrom ?? selected?.since ?? null
   const previewEndRaw = pendingFrom ? (hoverKey ?? pendingFrom) : (selected?.until ?? null)
-  const rangeLo = previewStart && previewEndRaw ? (previewStart < previewEndRaw ? previewStart : previewEndRaw) : null
-  const rangeHi = previewStart && previewEndRaw ? (previewStart < previewEndRaw ? previewEndRaw : previewStart) : null
+  let rangeLo: string | null = null
+  let rangeHi: string | null = null
+  if (previewStart && previewEndRaw) {
+    if (previewStart < previewEndRaw) {
+      rangeLo = previewStart
+      rangeHi = previewEndRaw
+    } else {
+      rangeLo = previewEndRaw
+      rangeHi = previewStart
+    }
+  }
 
   return (
     <Popover

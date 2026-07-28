@@ -3,9 +3,28 @@ import { createContext, useContext } from "react"
 import type { AppLocale } from "@/lib/locale"
 
 const english = {
+  navAbout: "About",
   navChat: "Chat",
   navCode: "Code",
   navPeople: "People",
+  aboutTitle: "About Sabio",
+  aboutTagline: "A Bitcoin protocol research assistant, grounded in real sources.",
+  aboutIntro:
+    "Sabio answers questions about Bitcoin Core development using real evidence: source code, commits, pull requests, BIPs, and archived developer discussion. It never fills gaps from general knowledge.",
+  aboutHowItWorksTitle: "How it works",
+  aboutHowItWorksIntro: "A root agent reads each question and routes it to one or both specialists below.",
+  aboutRepoAgentTitle: "Repository research",
+  aboutRepoAgentDescription:
+    "Reads source code, commits, issues, and pull requests, including full review threads, across four repos: Bitcoin Core, Bitcoin Knots, BIPs, and libsecp256k1.",
+  aboutCommsAgentTitle: "Community archive",
+  aboutCommsAgentDescription:
+    "Searches over 200,000 archived posts and messages, including bitcoin-dev, BitcoinTalk's development board, #bitcoin-core-dev, and Bitcoin Core PR Review Club IRC, and resolves identities across nearly 20,000 known contributors.",
+  aboutEvidenceTitle: "Evidence over guesses",
+  aboutEvidenceDescription:
+    "A proposal isn't consensus, an open PR isn't merged code, and merged code isn't necessarily released. Sabio keeps those stages distinct, cites its sources, and says so when evidence is missing instead of guessing.",
+  aboutAccountTitle: "Signing in",
+  aboutAccountDescription:
+    "Sabio uses Nostr for login: no email, no password. A browser extension signs a one-time challenge to prove who you are.",
   pageCommit: "Commit",
   pageCommits: "Commits",
   pageContributor: "Contributor",
@@ -155,6 +174,9 @@ const english = {
   toolCommits: "Looking up commits",
   toolOpenPrs: "Checking open PRs",
   toolReadPr: "Reading a PR",
+  toolSearchPrs: "Searching PRs",
+  toolSearchPrDiscussion: "Searching a PR discussion",
+  toolReadPrDiscussion: "Reading a PR comment",
   toolIssues: "Checking issues",
   toolContributors: "Checking contributor stats",
   toolBrowseFiles: "Browsing files",
@@ -164,6 +186,9 @@ const english = {
   toolReadMessage: "Reading a message",
   toolReadThread: "Reading a thread",
   toolSearchDiscussions: "Searching discussions",
+  toolSearchIrc: "Searching IRC discussions",
+  toolReadIrcMessage: "Reading an IRC message",
+  toolReadIrcContext: "Reading the IRC exchange",
   toolSearchWeb: "Searching the web",
   toolCurrentTime: "Checking the current time",
   toolUsing: "Using {tool}",
@@ -178,9 +203,28 @@ const english = {
 type TranslationKey = keyof typeof english
 
 const spanish: Record<TranslationKey, string> = {
+  navAbout: "Acerca de",
   navChat: "Chat",
   navCode: "Código",
   navPeople: "Personas",
+  aboutTitle: "Acerca de Sabio",
+  aboutTagline: "Un asistente de investigación sobre el desarrollo del protocolo de Bitcoin, basado en fuentes reales.",
+  aboutIntro:
+    "Sabio responde preguntas sobre el desarrollo de Bitcoin Core usando evidencia real: código fuente, commits, pull requests, BIPs y discusiones archivadas. No completa vacíos con conocimiento general.",
+  aboutHowItWorksTitle: "Cómo funciona",
+  aboutHowItWorksIntro: "Un agente raíz lee cada pregunta y la dirige a uno o ambos especialistas.",
+  aboutRepoAgentTitle: "Investigación de repositorios",
+  aboutRepoAgentDescription:
+    "Lee código fuente, commits, issues y pull requests, incluyendo los hilos de revisión completos, en cuatro repositorios: Bitcoin Core, Bitcoin Knots, BIPs y libsecp256k1.",
+  aboutCommsAgentTitle: "Archivo de la comunidad",
+  aboutCommsAgentDescription:
+    "Busca en más de 200.000 publicaciones y mensajes archivados, incluyendo bitcoin-dev, el foro de desarrollo de BitcoinTalk, #bitcoin-core-dev y el IRC del club de revisión de PR de Bitcoin Core, y vincula identidades de casi 20.000 colaboradores conocidos.",
+  aboutEvidenceTitle: "Evidencia, no suposiciones",
+  aboutEvidenceDescription:
+    "Una propuesta no es consenso, un PR abierto no es código fusionado, y el código fusionado no siempre está lanzado. Sabio mantiene esas etapas separadas, cita sus fuentes y lo dice cuando falta evidencia, en lugar de adivinar.",
+  aboutAccountTitle: "Iniciar sesión",
+  aboutAccountDescription:
+    "Sabio usa Nostr para iniciar sesión: sin correo, sin contraseña. Una extensión del navegador firma un desafío único para comprobar quién eres.",
   pageCommit: "Commit",
   pageCommits: "Commits",
   pageContributor: "Colaborador",
@@ -330,6 +374,9 @@ const spanish: Record<TranslationKey, string> = {
   toolCommits: "Buscando commits",
   toolOpenPrs: "Revisando PR abiertos",
   toolReadPr: "Leyendo un PR",
+  toolSearchPrs: "Buscando PR",
+  toolSearchPrDiscussion: "Buscando en una conversación de PR",
+  toolReadPrDiscussion: "Leyendo un comentario de PR",
   toolIssues: "Revisando issues",
   toolContributors: "Revisando estadísticas de colaboradores",
   toolBrowseFiles: "Explorando archivos",
@@ -339,6 +386,9 @@ const spanish: Record<TranslationKey, string> = {
   toolReadMessage: "Leyendo un mensaje",
   toolReadThread: "Leyendo un hilo",
   toolSearchDiscussions: "Buscando conversaciones",
+  toolSearchIrc: "Buscando conversaciones de IRC",
+  toolReadIrcMessage: "Leyendo un mensaje de IRC",
+  toolReadIrcContext: "Leyendo el intercambio de IRC",
   toolSearchWeb: "Buscando en la web",
   toolCurrentTime: "Consultando la hora actual",
   toolUsing: "Usando {tool}",

@@ -35,7 +35,10 @@ export function FileTree({ onSelectFile, activePath, repoName, browseRef, onAddT
   const Node = useMemo(() => {
     function TreeNode({ node, style }: NodeRendererProps<FileNode>) {
       const isDir = node.data.type === "tree"
-      const Icon = isDir ? (node.isOpen ? FolderOpen : Folder) : getFileIcon(node.data.name)
+      let Icon = getFileIcon(node.data.name)
+      if (isDir) {
+        Icon = node.isOpen ? FolderOpen : Folder
+      }
 
       return (
         <div

@@ -1,4 +1,4 @@
-.PHONY: help install frontend-install db-up db-down migrate backfill link-github scrape-bitcointalk backfill-bitcointalk-history backend agents frontend dev dev-all test test-e2e test-all
+.PHONY: help install frontend-install db-up db-down migrate backfill link-github scrape-bitcointalk backfill-bitcointalk-history backfill-irc sync-irc backend agents frontend dev dev-all test test-e2e test-all
 
 # Silence ADK's "[EXPERIMENTAL] ..." startup warnings (they flag ADK-internal
 # features we don't configure); everything else still surfaces normally.
@@ -13,6 +13,8 @@ help:
 	@echo "make link-github       - link people to GitHub accounts, across all configured repos (core/knots/bips/secp256k1 -- knots' history heavily overlaps core's, so this now takes noticeably longer than a single-repo run)"
 	@echo "make scrape-bitcointalk - ongoing BitcoinTalk crawl, recency-sorted (cron-friendly, catches new posts cheaply)"
 	@echo "make backfill-bitcointalk-history - ONE-TIME full-history BitcoinTalk backfill, oldest topic first (slow discovery pass)"
+	@echo "make backfill-irc       - ONE-TIME filtered gnusha IRC history import"
+	@echo "make sync-irc           - bounded incremental gnusha IRC sync for cron"
 	@echo "make backend           - run the backend API (foreground)"
 	@echo "make agents            - run the ADK web UI (foreground)"
 	@echo "make frontend          - run the frontend dev server (foreground)"
@@ -49,6 +51,12 @@ scrape-bitcointalk:
 
 backfill-bitcointalk-history:
 	python3 scripts/backfill_bitcointalk_history.py
+
+backfill-irc:
+	python3 scripts/ingest_gnusha_irc.py
+
+sync-irc:
+	python3 -m jobs.sync_irc
 
 # 8010, not uvicorn's default 8000 -- `adk web` also defaults to 8000, and
 # `make dev-all` runs both backend and agents at once.

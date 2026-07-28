@@ -6,6 +6,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AuthProvider } from "@/lib/auth"
 import { DEFAULT_REPO } from "@/lib/repos"
+import AboutPage from "@/pages/AboutPage"
 import ChatPage from "@/pages/ChatPage"
 import CodePage from "@/pages/CodePage"
 import PeoplePage from "@/pages/PeoplePage"
@@ -33,6 +34,7 @@ function App() {
               <main className="min-h-0 min-w-0 flex-1">
                 <Routes>
                   <Route path="/" element={<Navigate to="/chat" replace />} />
+                  <Route path="/about" element={<AboutPage />} />
                   <Route path="/chat" element={<ChatPage />} />
                   {/* Bare /code has no way to know which repo -- redirect to the
                       default one rather than guessing or adding a "no repo

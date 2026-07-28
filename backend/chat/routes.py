@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from google.adk.events.event import Event
 from google.adk.events.event_actions import EventActions
 
-from backend.auth import get_current_pubkey
+from backend.auth import get_current_user_id
 from backend.chat.constants import APP_NAME
 from backend.chat.events import event_payloads
 from backend.chat.models import (
@@ -30,17 +30,17 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 @router.post("/stream")
 async def stream_chat(
     req: ChatRequest,
-    pubkey: str = Depends(get_current_pubkey),
+    user_id: str = Depends(get_current_user_id),
 ) -> StreamingResponse:
     session_id = str(req.session_id)
     active_run_key, stop_event = register_active_run(
-        pubkey,
+        user_id,
         session_id,
         str(req.run_id),
     )
     return StreamingResponse(
         stream(
-            pubkey,
+            user_id,
             session_id,
             req.message,
             req.context,
@@ -56,10 +56,10 @@ async def stream_chat(
 @router.post("/stop")
 async def stop_chat(
     req: StopChatRequest,
-    pubkey: str = Depends(get_current_pubkey),
+    user_id: str = Depends(get_current_user_id),
 ) -> dict:
     stopped = stop_active_run(
-        pubkey,
+        user_id,
         str(req.session_id),
         str(req.run_id),
     )
@@ -68,10 +68,10 @@ async def stop_chat(
 
 @router.get("/sessions")
 async def list_chat_sessions(
-    pubkey: str = Depends(get_current_pubkey),
+    user_id: str = Depends(get_current_user_id),
 ) -> list[dict]:
     service, _ = get_session_runtime()
-    result = await service.list_sessions(app_name=APP_NAME, user_id=pubkey)
+    result = await service.list_sessions(app_name=APP_NAME, user_id=user_id)
     sessions = [
         {
             "session_id": session.id,
@@ -87,13 +87,13 @@ async def list_chat_sessions(
 @router.get("/sessions/{session_id}")
 async def get_chat_session(
     session_id: UUID,
-    pubkey: str = Depends(get_current_pubkey),
+    user_id: str = Depends(get_current_user_id),
 ) -> dict:
     service, _ = get_session_runtime()
     normalized_id = str(session_id)
     session = await service.get_session(
         app_name=APP_NAME,
-        user_id=pubkey,
+        user_id=user_id,
         session_id=normalized_id,
     )
     if session is None:
@@ -106,15 +106,15 @@ async def get_chat_session(
 async def rename_chat_session(
     session_id: UUID,
     req: RenameSessionRequest,
-    pubkey: str = Depends(get_current_pubkey),
+    user_id: str = Depends(get_current_user_id),
 ) -> dict:
     service, _ = get_session_runtime()
     normalized_id = str(session_id)
-    lock = await get_session_lock(pubkey, normalized_id)
+    lock = await get_session_lock(user_id, normalized_id)
     async with lock:
         session = await service.get_session(
             app_name=APP_NAME,
-            user_id=pubkey,
+            user_id=user_id,
             session_id=normalized_id,
         )
         if session is None:
@@ -135,16 +135,16 @@ async def rename_chat_session(
 @router.delete("/sessions/{session_id}")
 async def delete_chat_session(
     session_id: UUID,
-    pubkey: str = Depends(get_current_pubkey),
+    user_id: str = Depends(get_current_user_id),
 ) -> dict:
     service, _ = get_session_runtime()
     normalized_id = str(session_id)
-    lock = await get_session_lock(pubkey, normalized_id)
+    lock = await get_session_lock(user_id, normalized_id)
     async with lock:
         await service.delete_session(
             app_name=APP_NAME,
-            user_id=pubkey,
+            user_id=user_id,
             session_id=normalized_id,
         )
-    await remove_session_lock(pubkey, normalized_id)
+    await remove_session_lock(user_id, normalized_id)
     return {"ok": True}

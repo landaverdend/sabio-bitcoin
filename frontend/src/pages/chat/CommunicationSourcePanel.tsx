@@ -42,6 +42,7 @@ export function CommunicationSourcePanel({
           </p>
         </div>
         <Button
+          nativeButton={false}
           render={
             <a
               href={source.sourceUrl}

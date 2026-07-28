@@ -1,5 +1,6 @@
-import { Code2, Loader2, MessageCircle, MessageSquare, Plus, SquarePen, Trash2, Users } from "lucide-react"
+import { Code2, Info, Loader2, MessageCircle, MessageSquare, Plus, SquarePen, Trash2, Users } from "lucide-react"
 import { useState } from "react"
+import type { ReactNode } from "react"
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
 
 import { NostrAuthButton } from "@/components/nostr-auth-button"
@@ -20,12 +21,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { useAuth } from "@/lib/auth"
 import { useLocale, type TranslationKey } from "@/lib/i18n"
 import { DEFAULT_REPO } from "@/lib/repos"
 import { useAppChat } from "@/pages/chat/chat-context"
 
 const items = [
+  { to: "/about", labelKey: "navAbout", icon: Info },
   { to: "/chat", labelKey: "navChat", icon: MessageCircle },
   { to: `/code/${DEFAULT_REPO}`, labelKey: "navCode", icon: Code2, matchPrefix: "/code" },
   { to: "/people", labelKey: "navPeople", icon: Users },
@@ -39,7 +40,6 @@ const items = [
 export function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { pubkey } = useAuth()
   const { t } = useLocale()
   const {
     sessionId,
@@ -82,6 +82,85 @@ export function AppSidebar() {
     void renameSession(id, title)
   }
 
+  let conversationContent: ReactNode
+  if (isLoadingHistory && sessions.length === 0) {
+    conversationContent = (
+      <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        {t("loadingConversations")}
+      </div>
+    )
+  } else if (sessions.length === 0) {
+    conversationContent = (
+      <p className="px-2 py-2 text-xs text-muted-foreground">
+        {t("noConversations")}
+      </p>
+    )
+  } else {
+    conversationContent = (
+      <SidebarMenu>
+        {sessions.map((session) => {
+          if (renamingId === session.session_id) {
+            return (
+              <SidebarMenuItem key={session.session_id}>
+                <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
+                  <MessageSquare className="size-4 shrink-0 text-sidebar-foreground/70" />
+                  <input
+                    autoFocus
+                    value={draftTitle}
+                    onChange={(event) => setDraftTitle(event.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur()
+                      else if (event.key === "Escape") setRenamingId(null)
+                    }}
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                  />
+                </div>
+              </SidebarMenuItem>
+            )
+          }
+
+          return (
+            <SidebarMenuItem key={session.session_id}>
+              <SidebarMenuButton
+                onClick={() => openConversation(session.session_id)}
+                disabled={isStreaming || isLoadingHistory}
+                isActive={
+                  location.pathname.startsWith("/chat") &&
+                  session.session_id === sessionId
+                }
+                tooltip={session.title}
+              >
+                <MessageSquare />
+                <span>{session.title}</span>
+              </SidebarMenuButton>
+              <SidebarMenuAction
+                showOnHover
+                className="right-6"
+                onClick={() => startRename(session.session_id, session.title)}
+                disabled={isStreaming || isLoadingHistory}
+                aria-label={`${t("renameConversation")}: ${session.title}`}
+                title={t("renameConversation")}
+              >
+                <SquarePen />
+              </SidebarMenuAction>
+              <SidebarMenuAction
+                showOnHover
+                onClick={() => void deleteSession(session.session_id)}
+                disabled={isStreaming || isLoadingHistory}
+                aria-label={`${t("deleteConversation")}: ${session.title}`}
+                title={t("deleteConversation")}
+              >
+                <Trash2 />
+              </SidebarMenuAction>
+            </SidebarMenuItem>
+          )
+        })}
+      </SidebarMenu>
+    )
+  }
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="h-12 justify-center border-b p-2">
@@ -113,91 +192,23 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {pubkey && (
-          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-            <SidebarGroupLabel>{t("conversations")}</SidebarGroupLabel>
-            <SidebarGroupAction
-              onClick={startNewConversation}
-              disabled={isStreaming || isLoadingHistory}
-              aria-label={t("newConversation")}
-              title={t("newConversation")}
-            >
-              <Plus />
-            </SidebarGroupAction>
-            <SidebarGroupContent>
-              {isLoadingHistory && sessions.length === 0 ? (
-                <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" />
-                  {t("loadingConversations")}
-                </div>
-              ) : sessions.length === 0 ? (
-                <p className="px-2 py-2 text-xs text-muted-foreground">
-                  {t("noConversations")}
-                </p>
-              ) : (
-                <SidebarMenu>
-                  {sessions.map((session) =>
-                    renamingId === session.session_id ? (
-                      <SidebarMenuItem key={session.session_id}>
-                        <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
-                          <MessageSquare className="size-4 shrink-0 text-sidebar-foreground/70" />
-                          <input
-                            autoFocus
-                            value={draftTitle}
-                            onChange={(e) => setDraftTitle(e.target.value)}
-                            onBlur={commitRename}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.currentTarget.blur()
-                              else if (e.key === "Escape") setRenamingId(null)
-                            }}
-                            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-                          />
-                        </div>
-                      </SidebarMenuItem>
-                    ) : (
-                      <SidebarMenuItem key={session.session_id}>
-                        <SidebarMenuButton
-                          onClick={() => openConversation(session.session_id)}
-                          disabled={isStreaming || isLoadingHistory}
-                          isActive={
-                            location.pathname.startsWith("/chat") &&
-                            session.session_id === sessionId
-                          }
-                          tooltip={session.title}
-                        >
-                          <MessageSquare />
-                          <span>{session.title}</span>
-                        </SidebarMenuButton>
-                        <SidebarMenuAction
-                          showOnHover
-                          className="right-6"
-                          onClick={() => startRename(session.session_id, session.title)}
-                          disabled={isStreaming || isLoadingHistory}
-                          aria-label={`${t("renameConversation")}: ${session.title}`}
-                          title={t("renameConversation")}
-                        >
-                          <SquarePen />
-                        </SidebarMenuAction>
-                        <SidebarMenuAction
-                          showOnHover
-                          onClick={() => void deleteSession(session.session_id)}
-                          disabled={isStreaming || isLoadingHistory}
-                          aria-label={`${t("deleteConversation")}: ${session.title}`}
-                          title={t("deleteConversation")}
-                        >
-                          <Trash2 />
-                        </SidebarMenuAction>
-                      </SidebarMenuItem>
-                    ),
-                  )}
-                </SidebarMenu>
-              )}
-              {sessionError && (
-                <p className="px-2 pt-2 text-xs text-destructive">{sessionError}</p>
-              )}
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel>{t("conversations")}</SidebarGroupLabel>
+          <SidebarGroupAction
+            onClick={startNewConversation}
+            disabled={isStreaming || isLoadingHistory}
+            aria-label={t("newConversation")}
+            title={t("newConversation")}
+          >
+            <Plus />
+          </SidebarGroupAction>
+          <SidebarGroupContent>
+            {conversationContent}
+            {sessionError && (
+              <p className="px-2 pt-2 text-xs text-destructive">{sessionError}</p>
+            )}
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <NostrAuthButton />

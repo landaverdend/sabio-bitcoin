@@ -1,4 +1,11 @@
-import { Code2, ExternalLink, Globe2, Loader2, MessageSquareQuote } from "lucide-react"
+import {
+  Code2,
+  ExternalLink,
+  GitPullRequest,
+  Globe2,
+  Loader2,
+  MessageSquareQuote,
+} from "lucide-react"
 
 import { Markdown } from "@/components/Markdown"
 import { channelLabel } from "@/lib/channels"
@@ -11,6 +18,7 @@ import type {
   ChatBlock,
   ChatMessage,
   CommunicationReference,
+  GitHubDiscussionReference,
   SourceReference,
   WebReference,
 } from "@/pages/chat/hooks/use-chat"
@@ -215,6 +223,55 @@ function WebSourceChip({ source }: { source: WebReference }) {
   )
 }
 
+function GitHubDiscussionSourceChip({
+  source,
+}: {
+  source: GitHubDiscussionReference
+}) {
+  const { locale, t } = useLocale()
+  const location =
+    source.path && source.line
+      ? `${source.path}:L${source.line}`
+      : source.path
+
+  return (
+    <a
+      href={source.sourceUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex max-w-full items-start gap-2 rounded-lg border bg-muted/20 px-2.5 py-2 text-xs hover:bg-accent"
+      title={t("openOnGitHub")}
+    >
+      <GitPullRequest className="mt-0.5 size-3.5 shrink-0 text-sabio" />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-medium text-foreground">
+            {source.author || t("unknownAuthor")}
+          </span>
+          <span className="shrink-0 text-muted-foreground">
+            · {source.repo}#{source.prNumber} ·{" "}
+            {formatRelativeDate(source.createdAt, locale)}
+          </span>
+        </span>
+        {source.prTitle && (
+          <span className="mt-0.5 block truncate text-muted-foreground">
+            {source.prTitle}
+          </span>
+        )}
+        {location && (
+          <span className="mt-0.5 block truncate font-mono text-muted-foreground">
+            {location}
+          </span>
+        )}
+        <span className="mt-1 line-clamp-2 block text-muted-foreground">
+          “{source.excerpt}”
+        </span>
+      </span>
+      <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+    </a>
+  )
+}
+
 export function MessageBubble({
   message,
   onOpenSource,
@@ -277,6 +334,9 @@ export function MessageBubble({
               onOpen={onOpenCommunication}
             />
           )
+        }
+        if (block.type === "github_discussion_source") {
+          return <GitHubDiscussionSourceChip key={i} source={block.source} />
         }
         if (block.type === "web_source") {
           return <WebSourceChip key={i} source={block.source} />

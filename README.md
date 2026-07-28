@@ -223,6 +223,29 @@ For a smaller ongoing recency-based crawl:
 make scrape-bitcointalk
 ```
 
+### IRC history
+
+After applying the IRC migration, run the complete historical import once:
+
+```bash
+make backfill-irc
+```
+
+The importer is deliberately limited to `bitcoin-core-dev` and
+`bitcoin-core-pr-reviews`. It discards connection events, log markers, meeting
+bots, GitHub bots, empty lines, and meeting boundary commands before insertion.
+Human messages and actions are linked to IRC people; a curated set of established
+contributors is reconciled with existing GitHub identities and aliases.
+
+For a bounded preview with no database connection:
+
+```bash
+python scripts/ingest_gnusha_irc.py \
+  --since 2025-01-01 \
+  --max-files 2 \
+  --dry-run
+```
+
 ### Link GitHub identities
 
 ```bash
@@ -240,10 +263,20 @@ The repository contains idempotent jobs suitable for cron or another scheduler:
 ```bash
 python -m jobs.sync_mailing_list
 python -m jobs.sync_bitcointalk
+python -m jobs.sync_irc
 ```
 
 Run the full mailing-list backfill before its incremental job. No scheduler is
-installed automatically by this project.
+installed automatically by this project. The IRC job refetches a fixed seven-day
+window for each channel and inserts only source line numbers that are not already
+present. This also handles noise-only days, which intentionally create no database
+row that could serve as a watermark.
+
+For example, a daily cron entry could run:
+
+```cron
+17 3 * * * cd /path/to/sabio-bitcoin && .venv/bin/python -m jobs.sync_irc
+```
 
 ## Authentication and chat sessions
 
@@ -347,6 +380,11 @@ fly deploy
 ```
 
 Apply migrations to the production database before serving traffic.
+
+Production ingestion runs on separate Fly scheduled Machines named
+`sync-bitcointalk`, `sync-mailing-list`, and `sync-irc`; IRC synchronization runs
+daily. The deployment workflow updates all three Machines to the newly deployed
+application image, so scheduled jobs do not remain pinned to stale ingestion code.
 
 ## Project layout
 

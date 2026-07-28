@@ -12,13 +12,14 @@ function EntityAttachment({
   onRemove?: () => void
 }) {
   const { t } = useLocale()
-  const Icon = attachment.kind === "repository" ? GitBranch : UserRound
-  const detail =
-    attachment.kind === "repository"
-      ? t("repository")
-      : attachment.githubUsername
-        ? `@${attachment.githubUsername}`
-        : t("person")
+  let Icon = UserRound
+  let detail = t("person")
+  if (attachment.kind === "repository") {
+    Icon = GitBranch
+    detail = t("repository")
+  } else if (attachment.githubUsername) {
+    detail = `@${attachment.githubUsername}`
+  }
 
   return (
     <span className="inline-flex max-w-56 items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-xs">

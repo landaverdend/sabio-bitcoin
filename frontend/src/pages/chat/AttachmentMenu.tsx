@@ -8,6 +8,7 @@ import {
   UserRound,
 } from "lucide-react"
 import { useState } from "react"
+import type { ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -33,6 +34,14 @@ function personName(person: PersonSummary, unknownLabel: string): string {
     person.email ||
     unknownLabel
   )
+}
+
+function personDetail(person: PersonSummary): string | null {
+  if (person.github_username) return `GitHub: @${person.github_username}`
+  if (person.bitcointalk_username) {
+    return `BitcoinTalk: ${person.bitcointalk_username}`
+  }
+  return person.email
 }
 
 function MenuHeader({
@@ -93,6 +102,60 @@ export function AttachmentMenu({
       .filter((attachment) => attachment.kind === "person")
       .map((attachment) => attachment.personId),
   )
+
+  let peopleContent: ReactNode
+  if (peopleQuery.isLoading) {
+    peopleContent = (
+      <div className="flex items-center justify-center py-8 text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+      </div>
+    )
+  } else if (peopleQuery.isError) {
+    peopleContent = (
+      <p className="px-3 py-6 text-center text-sm text-destructive">
+        {t("couldNotLoadPeople")}
+      </p>
+    )
+  } else if (!peopleQuery.data || peopleQuery.data.people.length === 0) {
+    peopleContent = (
+      <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+        {t("noPeopleFound")}
+      </p>
+    )
+  } else {
+    peopleContent = peopleQuery.data.people.map((person) => {
+      const label = personName(person, t("unknownPerson"))
+      const selected = selectedPersonIds.has(person.id)
+      const detail = personDetail(person)
+      return (
+        <button
+          key={person.id}
+          type="button"
+          disabled={selected}
+          onClick={() => {
+            onAdd({
+              id: crypto.randomUUID(),
+              kind: "person",
+              personId: person.id,
+              label,
+              githubUsername: person.github_username || undefined,
+              bitcointalkUsername: person.bitcointalk_username || undefined,
+            })
+            close()
+          }}
+          className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:opacity-50"
+        >
+          <PersonAvatar name={label} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{label}</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {selected ? t("alreadyAttached") : detail || t("person")}
+            </span>
+          </span>
+        </button>
+      )
+    })
+  }
 
   return (
     <Popover
@@ -217,56 +280,7 @@ export function AttachmentMenu({
               </label>
             </div>
             <div className="max-h-72 overflow-y-auto p-1.5">
-              {peopleQuery.isLoading ? (
-                <div className="flex items-center justify-center py-8 text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                </div>
-              ) : peopleQuery.isError ? (
-                <p className="px-3 py-6 text-center text-sm text-destructive">
-                  {t("couldNotLoadPeople")}
-                </p>
-              ) : peopleQuery.data?.people.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                  {t("noPeopleFound")}
-                </p>
-              ) : (
-                peopleQuery.data?.people.map((person) => {
-                  const label = personName(person, t("unknownPerson"))
-                  const selected = selectedPersonIds.has(person.id)
-                  const detail = person.github_username
-                    ? `GitHub: @${person.github_username}`
-                    : person.bitcointalk_username
-                      ? `BitcoinTalk: ${person.bitcointalk_username}`
-                      : person.email
-                  return (
-                    <button
-                      key={person.id}
-                      type="button"
-                      disabled={selected}
-                      onClick={() => {
-                        onAdd({
-                          id: crypto.randomUUID(),
-                          kind: "person",
-                          personId: person.id,
-                          label,
-                          githubUsername: person.github_username || undefined,
-                          bitcointalkUsername: person.bitcointalk_username || undefined,
-                        })
-                        close()
-                      }}
-                      className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:opacity-50"
-                    >
-                      <PersonAvatar name={label} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{label}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {selected ? t("alreadyAttached") : detail || t("person")}
-                        </span>
-                      </span>
-                    </button>
-                  )
-                })
-              )}
+              {peopleContent}
             </div>
           </>
         )}

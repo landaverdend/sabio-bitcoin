@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page, type Route } from "@playwright/test"
 
 import { installMockApi, sse } from "./mock-api"
 
@@ -22,6 +22,14 @@ function deferred() {
     resolve = done
   })
   return { promise, resolve }
+}
+
+async function fulfillJson(route: Route, body: unknown): Promise<void> {
+  await route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(body),
+  })
 }
 
 test("language switch translates the interface and persists after reload", async ({
@@ -94,6 +102,76 @@ test("Spanish chat sends the locale and renders an SSE response", async ({
   expect(streamPayload?.run_id).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   )
+  expect(clientErrors).toEqual([])
+})
+
+test("exact PR discussion reads render as linked source cards", async ({
+  page,
+}) => {
+  const clientErrors = monitorClientErrors(page)
+  await installMockApi(page)
+  const sourceUrl =
+    "https://github.com/bitcoin/bitcoin/pull/28984#discussion_r1776"
+
+  await page.route("**/chat/stream", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: sse(
+        {
+          type: "tool_call",
+          author: "sabio_repos",
+          tool: "get_pr_discussion_item",
+          args: {
+            repo_name: "core",
+            number: 28984,
+            kind: "review_comment",
+            item_id: 1776,
+          },
+        },
+        {
+          type: "tool_result",
+          author: "sabio_repos",
+          tool: "get_pr_discussion_item",
+        },
+        {
+          type: "github_discussion_source",
+          repo: "bitcoin/bitcoin",
+          pr_number: 28984,
+          pr_title: "Add package relay",
+          kind: "review_comment",
+          item_id: "1776",
+          author: "glozow",
+          created_at: "2026-07-01T12:00:00+00:00",
+          excerpt: "Could this package relay condition be simplified?",
+          path: "src/net_processing.cpp",
+          line: 700,
+          source_url: sourceUrl,
+        },
+        {
+          type: "text",
+          author: "sabio_repos",
+          text: "The reviewer asked whether the condition could be simplified.",
+        },
+        { type: "done" },
+      ),
+    })
+  })
+
+  await page.goto("/chat")
+  await page.getByPlaceholder("Message Sabio…").fill("What did the reviewer say?")
+  await page.getByRole("button", { name: "Send message" }).click()
+
+  await expect(page.getByText("Reading a PR comment")).toBeVisible()
+  const source = page.getByRole("link", { name: /glozow/ })
+  await expect(source).toContainText("bitcoin/bitcoin#28984")
+  await expect(source).toContainText("src/net_processing.cpp:L700")
+  await expect(source).toHaveAttribute("href", sourceUrl)
+  await expect(
+    page.getByText(
+      "The reviewer asked whether the condition could be simplified.",
+    ),
+  ).toBeVisible()
   expect(clientErrors).toEqual([])
 })
 
@@ -279,6 +357,22 @@ test("stored sessions reload and can be deleted from the sidebar", async ({
   await page.goto("/chat")
   await expect(page.getByText("First stored answer")).toBeVisible()
 
+  const firstConversation = page.getByRole("button", {
+    name: "First topic",
+    exact: true,
+  })
+  await firstConversation.hover()
+  await page
+    .getByRole("button", { name: "Rename conversation: First topic" })
+    .click()
+  const renameInput = page.locator('input:not([type])')
+  await expect(renameInput).toHaveValue("First topic")
+  await renameInput.fill("Renamed topic")
+  await renameInput.press("Enter")
+  await expect(
+    page.getByRole("button", { name: "Renamed topic", exact: true }),
+  ).toBeVisible()
+
   const secondConversation = page.getByRole("button", {
     name: "Second topic",
     exact: true,
@@ -294,5 +388,205 @@ test("stored sessions reload and can be deleted from the sidebar", async ({
   await expect(page.getByText("First stored answer")).toBeVisible()
   await expect(page.getByRole("button", { name: "Second topic" })).toHaveCount(0)
   expect(state.deletedSessionIds).toEqual([secondId])
+  expect(clientErrors).toEqual([])
+})
+
+test("people detail switches between commit and communication data", async ({
+  page,
+}) => {
+  const clientErrors = monitorClientErrors(page)
+  await installMockApi(page, {
+    people: [
+      {
+        id: 42,
+        display_name: "Alice Example",
+        email: "alice@example.com",
+        github_username: "alice",
+        bitcointalk_username: null,
+        message_count: 1,
+        linked_count: 0,
+      },
+    ],
+  })
+
+  await page.route(/\/people\/42$/, async (route) => {
+    if (route.request().resourceType() === "document") {
+      await route.continue()
+      return
+    }
+    await fulfillJson(route, {
+      id: 42,
+      display_name: "Alice Example",
+      email: "alice@example.com",
+      github_username: "alice",
+      bitcointalk_username: null,
+      channels: [{ channel: "mailing_list", count: 1 }],
+      identities: [
+        {
+          id: 42,
+          display_name: "Alice Example",
+          email: "alice@example.com",
+          github_username: "alice",
+          bitcointalk_username: null,
+        },
+      ],
+    })
+  })
+  await page.route(/\/repo\/commits\?.*$/, (route) =>
+    fulfillJson(route, {
+      repo: "core",
+      ref: "HEAD",
+      page: 1,
+      page_size: 50,
+      total: 1,
+      author: "alice",
+      since: null,
+      until: null,
+      q: null,
+      commits: [
+        {
+          sha: "abcdef1234567890",
+          short_sha: "abcdef1",
+          author: "Alice Example",
+          date: "2026-07-01T12:00:00+00:00",
+          message: "Clarify package relay",
+        },
+      ],
+    }),
+  )
+  await page.route(/\/people\/42\/messages\?.*$/, (route) =>
+    fulfillJson(route, {
+      page: 1,
+      page_size: 50,
+      total: 1,
+      messages: [
+        {
+          id: 7,
+          channel: "mailing_list",
+          title: "Re: Package relay",
+          author: "alice@example.com",
+          posted_at: "2026-07-02T12:00:00+00:00",
+          url: "https://example.com/message/7",
+          snippet: "A concrete review observation.",
+        },
+      ],
+    }),
+  )
+
+  await page.goto("/people/42")
+  await expect(page.getByRole("heading", { name: "Alice Example" })).toBeVisible()
+  await expect(page.getByText("Clarify package relay")).toBeVisible()
+
+  await page.getByRole("tab", { name: /Mailing List/ }).click()
+  await expect(page.getByText("Re: Package relay")).toBeVisible()
+  await expect(page.getByText("A concrete review observation.")).toBeVisible()
+  expect(clientErrors).toEqual([])
+})
+
+test("code tree and commit date controls still respond to interaction", async ({
+  page,
+}) => {
+  const clientErrors = monitorClientErrors(page)
+  await installMockApi(page)
+  const commitQueries: URL[] = []
+  const commit = {
+    sha: "abcdef1234567890",
+    short_sha: "abcdef1",
+    author: "Alice Example",
+    date: "2026-07-01T12:00:00+00:00",
+    message: "Clarify package relay",
+  }
+
+  await page.route(/\/repo\/summary\?.*$/, (route) =>
+    fulfillJson(route, {
+      repo: "core",
+      ref: "HEAD",
+      branch: "master",
+      commit_count: 1,
+      latest_commit: commit,
+    }),
+  )
+  await page.route(/\/repo\/branches\?.*$/, (route) =>
+    fulfillJson(route, {
+      repo: "core",
+      branches: [
+        {
+          name: "master",
+          ref: "HEAD",
+          sha: commit.sha,
+          short_sha: commit.short_sha,
+          date: commit.date,
+          is_default: true,
+        },
+      ],
+    }),
+  )
+  await page.route(/\/repo\/tree\?.*$/, (route) =>
+    fulfillJson(route, {
+      repo: "core",
+      ref: "HEAD",
+      entries: [
+        { path: "src", type: "tree" },
+        { path: "src/main.cpp", type: "blob" },
+      ],
+    }),
+  )
+  await page.route(/\/repo\/file\?.*$/, (route) =>
+    fulfillJson(route, {
+      repo: "core",
+      ref: "HEAD",
+      path: "src/main.cpp",
+      content: "int main() { return 0; }\n",
+      binary: false,
+    }),
+  )
+  await page.route(/\/repo\/blame\?.*$/, (route) =>
+    fulfillJson(route, {
+      repo: "core",
+      ref: "HEAD",
+      path: "src/main.cpp",
+      lines: [],
+    }),
+  )
+  await page.route(/\/repo\/authors\?.*$/, (route) =>
+    fulfillJson(route, {
+      repo: "core",
+      ref: "HEAD",
+      authors: [{ name: "Alice Example", commit_count: 1 }],
+    }),
+  )
+  await page.route(/\/repo\/commits\?.*$/, (route) => {
+    commitQueries.push(new URL(route.request().url()))
+    return fulfillJson(route, {
+      repo: "core",
+      ref: "HEAD",
+      page: 1,
+      page_size: 50,
+      total: 1,
+      author: null,
+      since: null,
+      until: null,
+      q: null,
+      commits: [commit],
+    })
+  })
+
+  await page.goto("/code/core")
+  await expect(page.getByText("Select a file to view its contents.")).toBeVisible()
+  await page.getByText("src", { exact: true }).click()
+  await page.getByText("main.cpp", { exact: true }).click()
+  await expect(page.getByRole("tab", { name: /main\.cpp/ })).toBeVisible()
+
+  await page.goto("/code/core/commits")
+  await expect(page.getByText("Clarify package relay")).toBeVisible()
+  await page.getByRole("button", { name: "All time" }).click()
+  await page.getByRole("button", { name: "Today", exact: true }).click()
+
+  await expect.poll(() => commitQueries.length).toBeGreaterThan(1)
+  const filteredQuery = commitQueries.at(-1)
+  expect(filteredQuery?.searchParams.get("since")).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  expect(filteredQuery?.searchParams.get("until")).toBe(
+    filteredQuery?.searchParams.get("since"),
+  )
   expect(clientErrors).toEqual([])
 })

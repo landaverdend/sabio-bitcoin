@@ -1,5 +1,6 @@
 import { Search } from "lucide-react"
 import { useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 
 import { ListSkeleton } from "@/components/ListRowSkeleton"
@@ -51,6 +52,54 @@ export default function PeoplePage() {
   const isLoading = pages.some((p) => p.isLoading)
   const hasMore = people.length < total
 
+  let peopleContent: ReactNode
+  if (isLoading && people.length === 0) {
+    peopleContent = <ListSkeleton rows={8} avatar trailing />
+  } else {
+    peopleContent = (
+      <>
+        {people.map((person, index) => {
+          const subtitle = personSubtitle(
+            person,
+            t("linkedIdentity"),
+            t("linkedIdentities", { count: person.linked_count }),
+          )
+          return (
+            <Link
+              key={person.id}
+              to={`/people/${person.id}`}
+              className={`flex items-center gap-3 px-4 py-3 hover:bg-accent ${index > 0 ? "border-t" : ""}`}
+            >
+              <PersonAvatar name={personName(person, t("unknown"))} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {personName(person, t("unknown"))}
+                </p>
+                {subtitle && (
+                  <p className="truncate text-xs text-muted-foreground">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {person.message_count === 1
+                  ? t("oneMessage")
+                  : t("messageCount", {
+                      count: person.message_count.toLocaleString(locale),
+                    })}
+              </span>
+            </Link>
+          )
+        })}
+        {people.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+            {t("noPeopleFound")}
+          </p>
+        )}
+      </>
+    )
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       <div className="flex shrink-0 flex-col gap-3 border-b px-6 py-4">
@@ -71,51 +120,7 @@ export default function PeoplePage() {
 
       <div className="flex-1 px-6 py-4">
         <div className="overflow-hidden rounded-md border">
-          {isLoading && people.length === 0 ? (
-            <ListSkeleton rows={8} avatar trailing />
-          ) : (
-            <>
-              {people.map((person, i) => (
-                <Link
-                  key={person.id}
-                  to={`/people/${person.id}`}
-                  className={`flex items-center gap-3 px-4 py-3 hover:bg-accent ${i > 0 ? "border-t" : ""}`}
-                >
-                  <PersonAvatar name={personName(person, t("unknown"))} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {personName(person, t("unknown"))}
-                    </p>
-                    {personSubtitle(
-                      person,
-                      t("linkedIdentity"),
-                      t("linkedIdentities", { count: person.linked_count }),
-                    ) && (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {personSubtitle(
-                          person,
-                          t("linkedIdentity"),
-                          t("linkedIdentities", { count: person.linked_count }),
-                        )}
-                      </p>
-                    )}
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {person.message_count === 1
-                      ? t("oneMessage")
-                      : t("messageCount", {
-                          count: person.message_count.toLocaleString(locale),
-                        })}
-                  </span>
-                </Link>
-              ))}
-              {people.length === 0 && (
-                <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  {t("noPeopleFound")}
-                </p>
-              )}
-            </>
-          )}
+          {peopleContent}
         </div>
 
         {hasMore && (

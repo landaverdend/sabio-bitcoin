@@ -1,11 +1,11 @@
 import { ArrowUp, Loader2, Plus, Square, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import type { ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useAuth } from "@/lib/auth"
 import { useLocale, type TranslationKey } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { AttachmentMenu } from "@/pages/chat/AttachmentMenu"
@@ -68,7 +68,6 @@ function EvidencePanel({
 }
 
 export default function ChatPage() {
-  const { pubkey, login } = useAuth()
   const { t } = useLocale()
   const {
     sessionId,
@@ -88,7 +87,6 @@ export default function ChatPage() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [isReadingImages, setIsReadingImages] = useState(false)
   const [isDraggingImages, setIsDraggingImages] = useState(false)
-  const [authError, setAuthError] = useState<string | null>(null)
   const [selectedEvidence, setSelectedEvidence] = useState<SelectedEvidence | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -185,15 +183,6 @@ export default function ChatPage() {
     ) {
       return
     }
-    // Not signed in -- prompt the same Nostr login the sidebar offers
-    // instead of letting this hit the chat endpoint's 401 and surface as a
-    // generic "something went wrong". Doesn't auto-send afterward; hit send
-    // again once connected.
-    if (!pubkey) {
-      setAuthError(null)
-      login().catch((err: Error) => setAuthError(err.message))
-      return
-    }
     setInput("")
     const message =
       trimmed ||
@@ -206,6 +195,51 @@ export default function ChatPage() {
     void sendMessage(message, [], sentAttachments)
   }
 
+  let conversationContent: ReactNode
+  if (isLoadingHistory && messages.length === 0) {
+    conversationContent = (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        <Loader2 className="size-5 animate-spin" />
+      </div>
+    )
+  } else if (messages.length === 0) {
+    conversationContent = (
+      <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center gap-5 p-6 text-center">
+        <div className="space-y-1.5">
+          <h1 className="text-xl font-semibold tracking-tight">{t("askSabio")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t("chatDescription")}
+          </p>
+        </div>
+        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+          {STARTERS.map((promptKey) => (
+            <button
+              key={promptKey}
+              type="button"
+              onClick={() => submit(t(promptKey))}
+              className="rounded-md border px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              {t(promptKey)}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  } else {
+    conversationContent = (
+      <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
+        {messages.map((message, index) => (
+          <MessageBubble
+            key={index}
+            message={message}
+            onOpenSource={openCodeSource}
+            onOpenCommunication={openCommunicationSource}
+          />
+        ))}
+      </div>
+    )
+  }
+
   const chatPane = (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex h-12 items-center gap-2 border-b px-3 md:hidden">
@@ -214,7 +248,7 @@ export default function ChatPage() {
           onChange={(event) => {
             if (event.target.value) void loadSession(event.target.value)
           }}
-          disabled={!pubkey || isStreaming || isLoadingHistory}
+          disabled={isStreaming || isLoadingHistory}
           aria-label={t("conversation")}
           className="min-w-0 flex-1 truncate rounded-md border bg-background px-2 py-1.5 text-sm"
         >
@@ -251,49 +285,13 @@ export default function ChatPage() {
       </div>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        {isLoadingHistory && messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center gap-5 p-6 text-center">
-            <div className="space-y-1.5">
-              <h1 className="text-xl font-semibold tracking-tight">{t("askSabio")}</h1>
-              <p className="text-sm text-muted-foreground">
-                {t("chatDescription")}
-              </p>
-            </div>
-            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-              {STARTERS.map((promptKey) => (
-                <button
-                  key={promptKey}
-                  type="button"
-                  onClick={() => submit(t(promptKey))}
-                  className="rounded-md border px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  {t(promptKey)}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
-            {messages.map((message, i) => (
-              <MessageBubble
-                key={i}
-                message={message}
-                onOpenSource={openCodeSource}
-                onOpenCommunication={openCommunicationSource}
-              />
-            ))}
-          </div>
-        )}
+        {conversationContent}
       </div>
 
       <div className="shrink-0 border-t bg-background px-4 py-4 sm:px-6">
-        {(authError || attachmentError || sessionError) && (
+        {(attachmentError || sessionError) && (
           <p className="mx-auto mb-2 max-w-3xl text-sm text-destructive">
-            {authError || attachmentError || sessionError}
+            {attachmentError || sessionError}
           </p>
         )}
         <div

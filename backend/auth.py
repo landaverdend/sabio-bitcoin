@@ -8,10 +8,18 @@ pubkey is stored in a signed session cookie (Starlette's SessionMiddleware,
 see backend/main.py) and becomes the ADK session user_id for everything
 else (see backend/chat/) -- ADK already keys every session operation by
 user_id, so a pubkey slots into that dimension with no schema of our own.
+
+Login is optional, not required: get_current_user_id below falls back to
+a per-browser anonymous id (a UUID the frontend generates and persists in
+localStorage, sent as the X-Anon-Id header) so chat still gets a stable
+user_id to scope sessions by without an account. Logging in just swaps
+that id for a real pubkey going forward -- the two identities are never
+merged.
 """
 
 import secrets
 import time
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -21,6 +29,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 _CHALLENGE_TTL_SECONDS = 300
 _AUTH_EVENT_KIND = 22242  # NIP-42 "client authentication"
+_ANON_ID_HEADER = "X-Anon-Id"
 
 # In-memory, single-use, short-lived -- a nonce is worthless the moment it's
 # consumed or expires, so there's no reason to persist these across a
@@ -87,10 +96,22 @@ def logout(request: Request) -> dict:
     return {"ok": True}
 
 
-def get_current_pubkey(request: Request) -> str:
-    """FastAPI dependency for any route that needs an authenticated Nostr
-    identity -- backend/chat/ uses this to scope ADK sessions by pubkey."""
+def get_current_user_id(request: Request) -> str:
+    """FastAPI dependency for chat/comms/irc routes -- resolves whichever
+    identity the caller has: a logged-in Nostr pubkey if present, otherwise
+    the anonymous per-browser id from the X-Anon-Id header. Either way the
+    result becomes the ADK session user_id (see backend/chat/), so history
+    stays scoped to whichever identity actually sent the request. Prefixed
+    so an anonymous id can never collide with a real 64-hex pubkey."""
     pubkey = request.session.get("pubkey")
-    if not pubkey:
-        raise HTTPException(status_code=401, detail="not logged in")
-    return pubkey
+    if pubkey:
+        return pubkey
+
+    anon_id = request.headers.get(_ANON_ID_HEADER)
+    if not anon_id:
+        raise HTTPException(status_code=400, detail=f"missing {_ANON_ID_HEADER} header")
+    try:
+        UUID(anon_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{_ANON_ID_HEADER} must be a UUID") from None
+    return f"anon:{anon_id}"
