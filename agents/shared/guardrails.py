@@ -5,40 +5,79 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_response import LlmResponse
 
 _AGENT_NAME_PATTERN = re.compile(r"\bsabio_(?:repos|comms|irc)\b")
+_SPECIALIST_TOOL_NAMES = {"sabio_repos", "sabio_comms", "sabio_irc"}
+_ARCHIVE_SCOPE_TERMS = (
+    "mailing list",
+    "lista de correo",
+    "bitcointalk",
+    "forum",
+    "foro",
+)
+_IRC_SCOPE_TERMS = (
+    " irc",
+    "irc ",
+    "gnusha",
+    "#bitcoin-core",
+    "pr review club",
+)
+def _user_requested_archive_without_irc(
+    callback_context: CallbackContext | None,
+) -> bool:
+    user_content = (
+        callback_context.user_content if callback_context is not None else None
+    )
+    if not user_content or not user_content.parts:
+        return False
+    text = " ".join(part.text or "" for part in user_content.parts).lower()
+    return (
+        any(term in text for term in _ARCHIVE_SCOPE_TERMS)
+        and not any(term in text for term in _IRC_SCOPE_TERMS)
+    )
 
 
-def serialize_agent_transfers(
+def coalesce_specialist_calls(
     callback_context: CallbackContext, llm_response: LlmResponse
 ) -> None:
-    """Keep at most one transfer call in a model response.
+    """Keep one parallel tool call per specialist in a model response.
 
-    ADK executes function calls in one response concurrently and merges their
-    ``EventActions``. Multiple ``transfer_to_agent`` calls therefore overwrite
-    the same destination field; only the final transfer runs while every call
-    still receives a misleading ``result: null`` response. Preserve the first
-    requested destination and let the coordinator make any later handoffs in
-    subsequent model turns.
-
-    This mutates the response in place and deliberately returns ``None`` so
-    later after-model callbacks, such as text redaction, still run.
+    A model may split one evidence domain into multiple calls (for example, one
+    repository request for Core and another for Knots). The same specialist
+    agent must not be run concurrently against itself. Merge those scopes into
+    its first call while leaving different specialists and non-specialist tools
+    untouched.
     """
     if not llm_response.content or not llm_response.content.parts:
         return None
 
-    transfer_seen = False
+    first_call_by_name = {}
     retained_parts = []
+    exclude_unrequested_irc = _user_requested_archive_without_irc(
+        callback_context
+    )
     for part in llm_response.content.parts:
-        is_transfer = (
-            part.function_call is not None
-            and part.function_call.name == "transfer_to_agent"
-        )
-        if not is_transfer:
+        function_call = part.function_call
+        if not function_call or function_call.name not in _SPECIALIST_TOOL_NAMES:
             retained_parts.append(part)
             continue
-        if transfer_seen:
+        if function_call.name == "sabio_irc" and exclude_unrequested_irc:
             continue
-        transfer_seen = True
-        retained_parts.append(part)
+
+        first_call = first_call_by_name.get(function_call.name)
+        if first_call is None:
+            first_call_by_name[function_call.name] = function_call
+            retained_parts.append(part)
+            continue
+
+        first_args = dict(first_call.args or {})
+        duplicate_args = dict(function_call.args or {})
+        first_request = str(first_args.get("request", "")).strip()
+        duplicate_request = str(duplicate_args.get("request", "")).strip()
+        if duplicate_request and duplicate_request not in first_request:
+            separator = "\n\nAdditional scope:\n" if first_request else ""
+            first_args["request"] = (
+                f"{first_request}{separator}{duplicate_request}"
+            )
+            first_call.args = first_args
 
     llm_response.content.parts = retained_parts
     return None

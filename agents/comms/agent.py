@@ -1,11 +1,11 @@
 from dotenv import load_dotenv
 from google.adk.agents import Agent
-from google.adk.models.lite_llm import LiteLlm
 
 from agents.shared.guardrails import redact_agent_names
-from agents.shared.instructions import COORDINATOR_RETURN_INSTRUCTION
+from agents.shared.instructions import SPECIALIST_TOOL_INSTRUCTION
+from agents.shared.models import specialist_model
 from agents.shared.resolve import resolve
-from agents.shared.tools import now, search_web
+from agents.shared.tools import nonblocking, now
 
 from .db_tools import (
     get_message,
@@ -47,17 +47,22 @@ Ground every answer in what your tools actually return, not prior knowledge -- a
 explicit when a sender's identity (e.g. a name like 'Satoshi Nakamoto') can't be
 verified as authentic from the data alone.
 
-search_messages and get_thread are discovery tools, not final evidence.
+search_messages is discovery, not final evidence.
 Before quoting, paraphrasing, or making a claim about what someone said or believed,
 retrieve the full evidence with get_message. Sabio's UI automatically turns successful
 full-message results into source cards with archived excerpts and original-source
 URLs. If no relevant full message can be retrieved, say that no reliable source was
 found instead of answering from memory. Never invent or guess a source URL.
-""" + COORDINATOR_RETURN_INSTRUCTION
+
+For a broad community-position question, perform focused discovery searches together
+and retrieve at most six representative complete messages spanning the material
+positions and requested channels. Do not use web search as a substitute for the local
+archives; the coordinator owns external web enrichment.
+""" + SPECIALIST_TOOL_INSTRUCTION
 
 root_agent = Agent(
     name="sabio_comms",
-    model=LiteLlm(model="openai/gpt-5.2"),
+    model=specialist_model(),
     description=(
         "Comms agent for Bitcoin protocol development discussion. Searches the local "
         "archive (bitcoin-dev mailing list, its historical precursor lists, and "
@@ -66,12 +71,9 @@ root_agent = Agent(
     instruction=INSTRUCTION,
     tools=[
         now,
-        search_web,
-        resolve,
-        get_message,
-        get_thread,
-        search_messages,
+        nonblocking(resolve),
+        nonblocking(get_message),
+        nonblocking(search_messages),
     ],
-    disallow_transfer_to_peers=True,
     after_model_callback=redact_agent_names,
 )

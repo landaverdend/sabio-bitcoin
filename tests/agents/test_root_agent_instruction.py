@@ -26,11 +26,19 @@ def test_user_claims_are_verified_as_leads():
     assert "current affiliation claim in the question" in NORMALIZED_INSTRUCTION
 
 
-def test_multi_source_research_serializes_agent_transfers_and_retries():
-    assert "Agent transfers are strictly sequential" in NORMALIZED_INSTRUCTION
+def test_multi_source_research_runs_specialists_in_parallel_and_retries():
+    assert "Specialist agents are ordinary tools" in NORMALIZED_INSTRUCTION
     assert (
-        "Never emit more than one transfer_to_agent call"
+        "call all corresponding specialist tools in the same model response"
         in NORMALIZED_INSTRUCTION
     )
-    assert "A null transfer response is control-flow bookkeeping" in NORMALIZED_INSTRUCTION
+    assert "ADK executes those calls concurrently" in NORMALIZED_INSTRUCTION
     assert "never tell the user to rerun the query" in NORMALIZED_INSTRUCTION
+
+
+def test_explicit_discussion_scope_does_not_trigger_unrequested_irc_work():
+    assert (
+        "a BIP-status question asking what the mailing list or BitcoinTalk says "
+        "uses sabio_repos and sabio_comms together, without sabio_irc"
+        in NORMALIZED_INSTRUCTION
+    )

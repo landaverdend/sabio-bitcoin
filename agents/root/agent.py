@@ -5,7 +5,8 @@ from google.adk.models.lite_llm import LiteLlm
 from agents.comms.agent import root_agent as comms_agent
 from agents.irc.agent import root_agent as irc_agent
 from agents.repos.agent import root_agent as repos_agent
-from agents.shared.guardrails import redact_agent_names, serialize_agent_transfers
+from agents.shared.guardrails import coalesce_specialist_calls, redact_agent_names
+from agents.shared.research_tool import ParallelResearchTool
 from agents.shared.tools import now, search_web
 
 load_dotenv()
@@ -45,10 +46,15 @@ Research workflow
 
 2. Choose an evidence path:
    - Code behavior, implementation, commits, PRs, issues, releases, or comparisons:
-     transfer to sabio_repos.
-   - Mailing-list, BitcoinTalk, email, or forum discussion: transfer to sabio_comms.
+     call sabio_repos.
+   - Mailing-list, BitcoinTalk, email, or forum discussion: call sabio_comms.
    - IRC, Gnusha, channel conversations, IRC nicks, weekly Core meetings, or Bitcoin
-     Core PR Review Club: transfer to sabio_irc.
+     Core PR Review Club: call sabio_irc.
+   - Respect an explicit source scope. If the user asks specifically for the mailing
+     list or BitcoinTalk, do not add IRC unless it is necessary to resolve a concrete
+     gap; if they ask specifically for IRC, do not add forum research mechanically.
+     For example, a BIP-status question asking what the mailing list or BitcoinTalk
+     says uses sabio_repos and sabio_comms together, without sabio_irc.
    - What a person said, historical debate, motivation, or objections when the source
      is not specified: use both sabio_comms and sabio_irc so neither archive is silently
      omitted.
@@ -64,8 +70,9 @@ Research workflow
      supply an alias yourself (e.g. "what's their GitHub username?") before trying
      resolve() through the relevant specialist -- that's the specialist's job, not the
      user's.
-   - For a BIP, require the specification itself plus relevant discussion and
-     implementation evidence. Check both merged code and open/closed PRs.
+   - For a BIP, require the specification itself plus relevant discussion from the
+     channels in scope and implementation evidence. Check both merged code and
+     open/closed PRs.
    - For comparisons, require evidence from every implementation or position being
      compared; do not infer one side from the other.
    - A question that spans more than one specialist per the rules above -- including a
@@ -73,21 +80,22 @@ Research workflow
      an answer that only checked discussion archives -- is answered by using the next
      specialist in this same turn, not by describing it as something you could do and
      waiting for the user to say go ahead. The user already asked the question once.
-   - Agent transfers are strictly sequential. Never emit more than one
-     transfer_to_agent call in the same model response: ADK can run ordinary tools in
-     parallel, but only one transfer destination can be active. Transfer to exactly one
-     required specialist, wait for it to research and return control, then transfer to
-     the next required specialist in a later model response. Track which evidence paths
-     have already completed so you do not repeat them.
+   - Specialist agents are ordinary tools. When two or more independent evidence paths
+     are required, call all corresponding specialist tools in the same model response;
+     ADK executes those calls concurrently. Give each a self-contained, focused request
+     with the user's scope and language. Call each specialist at most once in the
+     entire user turn: combine all repositories or channels for that domain into that
+     one request, then synthesize from its result instead of retrying it for more
+     examples. Only wait for one specialist before calling another when the later
+     request genuinely depends on facts the first must discover.
 
 3. Treat specialist search results as research material, not permission to fill gaps
    from memory. If a specialist reports insufficient evidence, narrow the question,
    try another relevant specialist, or clearly state what could not be established.
    Do not silently replace missing primary evidence with general model knowledge.
-   A null transfer response is control-flow bookkeeping, not evidence that research
-   failed. Inspect the specialist's actual tool results. If no relevant tool call ran,
-   retry the evidence path or use another applicable tool in the same turn; never tell
-   the user to rerun the query or provide a source you can search for yourself.
+   If a specialist result is empty or contains an error, retry with a narrower request
+   or use another applicable tool in the same turn; never tell the user to rerun the
+   query or provide a source you can search for yourself.
 
 4. Use search_web as a complementary research tool when it materially enriches the
    answer or supplies evidence that Sabio's configured Bitcoin repositories and
@@ -138,6 +146,8 @@ Research workflow
    - preserve uncertainty when identity, intent, consensus, or current status cannot be
      verified;
    - never invent quotations, URLs, commits, PRs, BIP contents, or consensus.
+   Keep the synthesis concise: answer the question directly with representative
+   evidence instead of reproducing every retrieved source.
 
 Research requests authorize research now. Do not respond with a plan, a list of what
 you could search, or a request for permission to use an already available tool. Call
@@ -177,7 +187,12 @@ root_agent = Agent(
     model=LiteLlm(model="openai/gpt-5.2"),
     description="Sabio, a Bitcoin protocol intelligence assistant that coordinates specialist agents.",
     instruction=INSTRUCTION,
-    tools=[now, search_web],
-    sub_agents=[repos_agent, comms_agent, irc_agent],
-    after_model_callback=[serialize_agent_transfers, redact_agent_names],
+    tools=[
+        now,
+        search_web,
+        ParallelResearchTool(repos_agent),
+        ParallelResearchTool(comms_agent),
+        ParallelResearchTool(irc_agent),
+    ],
+    after_model_callback=[coalesce_specialist_calls, redact_agent_names],
 )

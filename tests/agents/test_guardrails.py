@@ -1,6 +1,6 @@
 from google.genai import types
 
-from agents.shared.guardrails import redact_agent_names, serialize_agent_transfers
+from agents.shared.guardrails import coalesce_specialist_calls, redact_agent_names
 
 
 def _response(*texts: str):
@@ -66,7 +66,7 @@ def test_handles_response_with_no_content():
     assert redact_agent_names(None, LlmResponse()) is None
 
 
-def test_keeps_only_first_transfer_call_in_one_model_response():
+def test_coalesces_duplicate_calls_to_one_specialist():
     from google.adk.models.llm_response import LlmResponse
 
     response = LlmResponse(
@@ -75,62 +75,113 @@ def test_keeps_only_first_transfer_call_in_one_model_response():
             parts=[
                 types.Part(
                     function_call=types.FunctionCall(
-                        name="transfer_to_agent",
-                        args={"agent_name": "sabio_repos"},
+                        name="sabio_repos",
+                        args={"request": "Check Bitcoin Core."},
                     )
                 ),
                 types.Part(
                     function_call=types.FunctionCall(
-                        name="transfer_to_agent",
-                        args={"agent_name": "sabio_comms"},
-                    )
-                ),
-                types.Part(
-                    function_call=types.FunctionCall(
-                        name="transfer_to_agent",
-                        args={"agent_name": "sabio_irc"},
+                        name="sabio_repos",
+                        args={"request": "Check Bitcoin Knots."},
                     )
                 ),
             ],
         )
     )
 
-    assert serialize_agent_transfers(None, response) is None
-    calls = [
-        part.function_call
-        for part in response.content.parts
-        if part.function_call is not None
-    ]
-    assert len(calls) == 1
-    assert calls[0].args["agent_name"] == "sabio_repos"
+    assert coalesce_specialist_calls(None, response) is None
+    assert len(response.content.parts) == 1
+    request = response.content.parts[0].function_call.args["request"]
+    assert "Check Bitcoin Core." in request
+    assert "Check Bitcoin Knots." in request
+    assert "Additional scope:" in request
 
 
-def test_transfer_guard_preserves_parallel_non_transfer_tools():
+def test_coalescer_preserves_parallel_specialists_and_other_tools():
     from google.adk.models.llm_response import LlmResponse
 
+    names = ["now", "sabio_repos", "sabio_comms", "sabio_irc", "search_web"]
     response = LlmResponse(
         content=types.Content(
             role="model",
             parts=[
                 types.Part(
                     function_call=types.FunctionCall(
-                        name="search_web",
-                        args={"query": "current BIP-119 status"},
+                        name=name,
+                        args={"request": name},
                     )
-                ),
-                types.Part(
-                    function_call=types.FunctionCall(
-                        name="transfer_to_agent",
-                        args={"agent_name": "sabio_repos"},
-                    )
-                ),
+                )
+                for name in names
             ],
         )
     )
 
-    serialize_agent_transfers(None, response)
+    assert coalesce_specialist_calls(None, response) is None
+    assert [
+        part.function_call.name for part in response.content.parts
+    ] == names
 
-    assert [part.function_call.name for part in response.content.parts] == [
-        "search_web",
-        "transfer_to_agent",
-    ]
+
+def test_coalescer_drops_unrequested_irc_for_explicit_archive_scope():
+    from types import SimpleNamespace
+
+    from google.adk.models.llm_response import LlmResponse
+
+    callback_context = SimpleNamespace(
+        user_content=types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    text="¿Qué dice la lista de correo o BitcoinTalk sobre BIP-119?"
+                )
+            ],
+        )
+    )
+    response = LlmResponse(
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(name=name, args={})
+                )
+                for name in ("sabio_repos", "sabio_comms", "sabio_irc")
+            ],
+        )
+    )
+
+    assert coalesce_specialist_calls(callback_context, response) is None
+    assert [
+        part.function_call.name for part in response.content.parts
+    ] == ["sabio_repos", "sabio_comms"]
+
+
+def test_coalescer_keeps_irc_when_user_explicitly_requests_it():
+    from types import SimpleNamespace
+
+    from google.adk.models.llm_response import LlmResponse
+
+    callback_context = SimpleNamespace(
+        user_content=types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    text="Busca la lista de correo y los logs IRC de Gnusha."
+                )
+            ],
+        )
+    )
+    response = LlmResponse(
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(
+                        name="sabio_irc", args={"request": "Search IRC."}
+                    )
+                )
+            ],
+        )
+    )
+
+    assert coalesce_specialist_calls(callback_context, response) is None
+    assert response.content.parts[0].function_call.name == "sabio_irc"

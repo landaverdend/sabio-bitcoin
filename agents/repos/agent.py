@@ -1,11 +1,11 @@
 from dotenv import load_dotenv
 from google.adk.agents import Agent
-from google.adk.models.lite_llm import LiteLlm
 
 from agents.shared.guardrails import redact_agent_names
-from agents.shared.instructions import COORDINATOR_RETURN_INSTRUCTION
+from agents.shared.instructions import SPECIALIST_TOOL_INSTRUCTION
+from agents.shared.models import specialist_model
 from agents.shared.resolve import resolve
-from agents.shared.tools import now, search_web
+from agents.shared.tools import nonblocking, now
 
 from .code_browser import list_directory, read_file, search_code
 from .github_tools import (
@@ -82,11 +82,15 @@ GitHub, so do not cite a path you have not actually read.
 If read_file returns an error with total_lines, correct the requested range
 and retry. A line just past EOF is an input mistake, not evidence that the
 file or code does not exist.
-""" + COORDINATOR_RETURN_INSTRUCTION
+
+For a status comparison, search the required repositories concurrently, then inspect
+at most the five most probative BIP files, PRs, or commits. Do not broaden into general
+web research; the coordinator owns external web enrichment.
+""" + SPECIALIST_TOOL_INSTRUCTION
 
 root_agent = Agent(
     name="sabio_repos",
-    model=LiteLlm(model="openai/gpt-5.2"),
+    model=specialist_model(),
     description=(
         "Repo-traversal agent for Bitcoin client implementations. Answers questions about "
         "changes, differences, and ongoing development by reading commits, PRs, issues, and "
@@ -95,20 +99,18 @@ root_agent = Agent(
     instruction=INSTRUCTION,
     tools=[
         now,
-        search_web,
-        resolve,
-        get_commits,
-        get_open_prs,
-        get_pr_detail,
-        search_prs,
-        search_pr_discussion,
-        get_pr_discussion_item,
-        get_issues,
-        get_contributor_stats,
-        list_directory,
-        read_file,
-        search_code,
+        nonblocking(resolve),
+        nonblocking(get_commits),
+        nonblocking(get_open_prs),
+        nonblocking(get_pr_detail),
+        nonblocking(search_prs),
+        nonblocking(search_pr_discussion),
+        nonblocking(get_pr_discussion_item),
+        nonblocking(get_issues),
+        nonblocking(get_contributor_stats),
+        nonblocking(list_directory),
+        nonblocking(read_file),
+        nonblocking(search_code),
     ],
-    disallow_transfer_to_peers=True,
     after_model_callback=redact_agent_names,
 )

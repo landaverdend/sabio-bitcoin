@@ -1,9 +1,28 @@
 import asyncio
+import threading
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from agents.shared import tools
+
+
+def test_nonblocking_tools_really_overlap_and_preserve_schema_metadata():
+    barrier = threading.Barrier(2)
+
+    def blocking_lookup(query: str) -> str:
+        """Look up one value."""
+        barrier.wait(timeout=0.5)
+        return query
+
+    wrapped = tools.nonblocking(blocking_lookup)
+
+    async def run():
+        return await asyncio.gather(wrapped("core"), wrapped("knots"))
+
+    assert asyncio.run(run()) == ["core", "knots"]
+    assert wrapped.__name__ == "blocking_lookup"
+    assert wrapped.__doc__ == "Look up one value."
 
 
 def test_now_returns_current_utc_time():

@@ -1,14 +1,22 @@
 """Small, guarded capabilities shared by every Sabio agent."""
 
+import asyncio
 import logging
 import os
+import threading
 from datetime import datetime, timezone
+from functools import wraps
+from typing import Awaitable, Callable, ParamSpec, TypeVar
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from openai import AsyncOpenAI
 
 logger = logging.getLogger("sabio.tools")
+
+P = ParamSpec("P")
+R = TypeVar("R")
+_BLOCKING_TOOL_SLOTS = threading.BoundedSemaphore(6)
 
 _MAX_WEB_QUERY_CHARS = 1_000
 _MAX_WEB_SOURCES = 8
@@ -18,6 +26,29 @@ _MAX_WEB_SOURCES = 8
 # clean rejection). gpt-4o-mini is what every other agent in this app
 # already runs on, and works with this tool.
 _WEB_SEARCH_MODEL = "gpt-4o-mini"
+
+
+def nonblocking(
+    func: Callable[P, R],
+) -> Callable[P, Awaitable[R]]:
+    """Run a blocking agent tool off the event loop.
+
+    ADK 1.13 calls synchronous FunctionTool functions inline even when it
+    schedules several tool calls with ``asyncio.gather``. GitHub, psycopg2,
+    and PyGithub calls would therefore serialize every supposedly parallel
+    research branch. ``wraps`` preserves the original signature and docstring
+    so ADK still exposes the correct function schema to the model.
+    """
+
+    @wraps(func)
+    async def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        def invoke() -> R:
+            with _BLOCKING_TOOL_SLOTS:
+                return func(*args, **kwargs)
+
+        return await asyncio.to_thread(invoke)
+
+    return wrapped
 
 
 def now(timezone_name: str) -> dict:

@@ -656,6 +656,60 @@ def test_search_web_result_becomes_clickable_web_sources():
     ]
 
 
+def test_parallel_specialist_result_forwards_nested_source_cards():
+    response = {
+        "answer": "Repository and archive evidence.",
+        "sources": [
+            {
+                "type": "source",
+                "repo": "bips",
+                "path": "bip-0119.mediawiki",
+                "ref": "master",
+                "start_line": 1,
+                "end_line": 20,
+                "github_url": (
+                    "https://github.com/bitcoin/bips/blob/master/"
+                    "bip-0119.mediawiki#L1-L20"
+                ),
+            },
+            {
+                "type": "communication_source",
+                "message_id": "39701",
+                "channel": "mailing_list",
+                "author": "Greg Maxwell",
+                "title": "Re: CTV + CSFS",
+                "posted_at": "2025-06-12T02:06:52+00:00",
+                "excerpt": "Primary-source excerpt.",
+                "source_url": "https://gnusha.org/pi/bitcoindev/message/",
+            },
+        ],
+    }
+    event = Event(
+        author="root",
+        content=types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="sabio_repos",
+                    response=response,
+                )
+            ],
+        ),
+    )
+
+    payloads = chat_events.event_payloads(event)
+
+    assert payloads[0] == {
+        "type": "tool_result",
+        "author": "root",
+        "tool": "sabio_repos",
+    }
+    assert payloads[1]["type"] == "source"
+    assert payloads[1]["path"] == "bip-0119.mediawiki"
+    assert payloads[2]["type"] == "communication_source"
+    assert payloads[2]["message_id"] == "39701"
+
+
 class _FakeSessionService:
     def __init__(self):
         self.sessions = []

@@ -261,6 +261,117 @@ def web_references(response: dict) -> list[dict]:
     return references
 
 
+def research_references(response: dict) -> list[dict]:
+    """Validate compact source payloads returned by a specialist tool."""
+    raw_sources = response.get("sources")
+    if not isinstance(raw_sources, list):
+        return []
+
+    references = []
+    seen: set[tuple[str, str]] = set()
+    for raw_source in raw_sources[:50]:
+        if not isinstance(raw_source, dict):
+            continue
+        source_type = raw_source.get("type")
+        reference = None
+        identity = None
+
+        if source_type == "source":
+            reference = source_reference(raw_source)
+            if reference:
+                identity = (
+                    source_type,
+                    f"{reference['repo']}:{reference['path']}:{reference['ref']}:"
+                    f"{reference['start_line']}:{reference['end_line']}",
+                )
+        elif source_type == "communication_source":
+            message_id = raw_source.get("message_id")
+            channel = raw_source.get("channel")
+            excerpt = raw_source.get("excerpt")
+            source_url = raw_source.get("source_url")
+            if (
+                isinstance(message_id, str)
+                and message_id
+                and isinstance(channel, str)
+                and channel
+                and isinstance(excerpt, str)
+                and isinstance(source_url, str)
+                and source_url.startswith(("http://", "https://"))
+            ):
+                reference = {
+                    "type": source_type,
+                    "message_id": message_id,
+                    "channel": channel,
+                    "author": (
+                        raw_source.get("author")
+                        if isinstance(raw_source.get("author"), str)
+                        else None
+                    ),
+                    "title": (
+                        raw_source.get("title")
+                        if isinstance(raw_source.get("title"), str)
+                        else None
+                    ),
+                    "posted_at": (
+                        raw_source.get("posted_at")
+                        if isinstance(raw_source.get("posted_at"), str)
+                        else None
+                    ),
+                    "excerpt": excerpt[:361],
+                    "source_url": source_url,
+                }
+                identity = (source_type, message_id)
+        elif source_type == "github_discussion_source":
+            source_url = raw_source.get("source_url")
+            item_id = raw_source.get("item_id")
+            if (
+                isinstance(source_url, str)
+                and source_url.startswith(("http://", "https://"))
+                and isinstance(item_id, str)
+                and item_id
+            ):
+                reference = {
+                    key: raw_source.get(key)
+                    for key in (
+                        "author",
+                        "created_at",
+                        "excerpt",
+                        "item_id",
+                        "kind",
+                        "line",
+                        "path",
+                        "pr_number",
+                        "pr_title",
+                        "repo",
+                        "source_url",
+                        "type",
+                    )
+                }
+                identity = (source_type, source_url)
+        elif source_type == "web_source":
+            title = raw_source.get("title")
+            source_url = raw_source.get("source_url")
+            if (
+                isinstance(title, str)
+                and title
+                and isinstance(source_url, str)
+                and source_url.startswith(("http://", "https://"))
+            ):
+                reference = {
+                    "type": source_type,
+                    "title": title,
+                    "source_url": source_url,
+                }
+                identity = (source_type, source_url)
+
+        if reference is None or identity is None or identity in seen:
+            continue
+        seen.add(identity)
+        references.append(reference)
+
+    return references
+
+
 def event_payloads(event: Event) -> list[dict]:
     """Turn one ADK event into Sabio's shared live/history event shape."""
     if event.author == "user":
@@ -347,6 +458,12 @@ def event_payloads(event: Event) -> list[dict]:
                     payloads.append(source)
             elif part.function_response.name == "search_web":
                 payloads.extend(web_references(response))
+            elif part.function_response.name in {
+                "sabio_comms",
+                "sabio_irc",
+                "sabio_repos",
+            }:
+                payloads.extend(research_references(response))
         elif part.text:
             payloads.append(
                 {
