@@ -232,6 +232,7 @@ export default function ChatPage() {
           <MessageBubble
             key={`${sessionId}-${index}`}
             message={message}
+            isStreaming={isStreaming && index === messages.length - 1}
             onOpenSource={openCodeSource}
             onOpenCommunication={openCommunicationSource}
           />

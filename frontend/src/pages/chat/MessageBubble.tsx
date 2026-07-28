@@ -49,16 +49,17 @@ type UserReference =
       attachment: Exclude<ChatAttachmentValue, { kind: "image" }>
     }
 
-function ThinkingDots() {
+function StreamStatus() {
+  const { t } = useLocale()
+
   return (
-    <span className="flex items-center gap-0.5 py-1.5">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="size-1.5 rounded-full bg-muted-foreground/50 [animation:pulse_1.2s_ease-in-out_infinite]"
-          style={{ animationDelay: `${i * 0.15}s` }}
-        />
-      ))}
+    <span
+      role="status"
+      aria-live="polite"
+      className="flex w-fit items-center gap-1.5 py-1 text-xs text-muted-foreground"
+    >
+      <Loader2 className="size-3.5 animate-spin text-sabio" />
+      {t("stillResearching")}
     </span>
   )
 }
@@ -466,10 +467,12 @@ function ChatBlockView({
 
 function AssistantMessageBubble({
   message,
+  isStreaming,
   onOpenSource,
   onOpenCommunication,
 }: {
   message: Extract<ChatMessage, { role: "assistant" }>
+  isStreaming: boolean
   onOpenSource?: (source: SourceReference) => void
   onOpenCommunication?: (source: CommunicationReference) => void
 }) {
@@ -487,10 +490,14 @@ function AssistantMessageBubble({
 
   const { start, end } = paginationWindow(referenceBlocks.length, requestedPage)
   const visibleReferences = referenceBlocks.slice(start, end)
+  const hasPendingToolCalls = contentBlocks.some(
+    ({ block }) =>
+      block.type === "tool" && block.calls.some((call) => !call.done),
+  )
+  const showStreamStatus = isStreaming && !hasPendingToolCalls
 
   return (
     <div className="max-w-2xl space-y-2">
-      {message.blocks.length === 0 && <ThinkingDots />}
       {contentBlocks.map(({ block, index }) => (
         <ChatBlockView
           key={index}
@@ -512,16 +519,19 @@ function AssistantMessageBubble({
         requestedPage={requestedPage}
         onPageChange={setRequestedPage}
       />
+      {showStreamStatus && <StreamStatus />}
     </div>
   )
 }
 
 export function MessageBubble({
   message,
+  isStreaming = false,
   onOpenSource,
   onOpenCommunication,
 }: {
   message: ChatMessage
+  isStreaming?: boolean
   onOpenSource?: (source: SourceReference) => void
   onOpenCommunication?: (source: CommunicationReference) => void
 }) {
@@ -531,6 +541,7 @@ export function MessageBubble({
   return (
     <AssistantMessageBubble
       message={message}
+      isStreaming={isStreaming}
       onOpenSource={onOpenSource}
       onOpenCommunication={onOpenCommunication}
     />

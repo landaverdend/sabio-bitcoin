@@ -86,7 +86,11 @@ export function CodeChatPanel({
         ) : (
           <div className="flex flex-col gap-4 p-3">
             {messages.map((message, i) => (
-              <MessageBubble key={i} message={message} />
+              <MessageBubble
+                key={i}
+                message={message}
+                isStreaming={isStreaming && i === messages.length - 1}
+              />
             ))}
           </div>
         )}

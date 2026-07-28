@@ -222,6 +222,91 @@ test("chat evidence is paginated after five references", async ({ page }) => {
   expect(clientErrors).toEqual([])
 })
 
+test("long research keeps a visible status after evidence arrives", async ({
+  page,
+}) => {
+  const clientErrors = monitorClientErrors(page)
+  await installMockApi(page)
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window)
+    window.fetch = async (input, init) => {
+      let url: string
+      if (typeof input === "string") {
+        url = input
+      } else if (input instanceof URL) {
+        url = input.href
+      } else {
+        url = input.url
+      }
+      if (!url.endsWith("/chat/stream")) return originalFetch(input, init)
+
+      const encoder = new TextEncoder()
+      const event = (value: object) =>
+        encoder.encode(`data: ${JSON.stringify(value)}\n\n`)
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            event({
+              type: "tool_call",
+              author: "sabio_comms",
+              tool: "search_messages",
+              args: { query: "BIP-119" },
+            }),
+          )
+          controller.enqueue(
+            event({
+              type: "tool_result",
+              author: "sabio_comms",
+              tool: "search_messages",
+            }),
+          )
+          controller.enqueue(
+            event({
+              type: "communication_source",
+              message_id: "38174",
+              channel: "mailing_list",
+              author: "alicexbt",
+              title: "[bitcoin-dev] BIP-119 UASF",
+              posted_at: "2023-08-20T17:46:01+00:00",
+              excerpt: "A representative archived message.",
+              source_url: "https://gnusha.org/pi/bitcoindev/example/",
+            }),
+          )
+
+          window.setTimeout(() => {
+            controller.enqueue(
+              event({
+                type: "text",
+                author: "root",
+                text: "The research is complete.",
+              }),
+            )
+            controller.enqueue(event({ type: "done" }))
+            controller.close()
+          }, 1_500)
+        },
+      })
+
+      return new Response(body, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      })
+    }
+  })
+
+  await page.goto("/chat")
+  await page.getByPlaceholder("Message Sabio…").fill("Research BIP-119")
+  await page.getByRole("button", { name: "Send message" }).click()
+
+  await expect(
+    page.getByText("A representative archived message.", { exact: false }),
+  ).toBeVisible()
+  await expect(page.getByRole("status")).toHaveText("Still researching…")
+  await expect(page.getByText("The research is complete.")).toBeVisible()
+  await expect(page.getByRole("status")).toHaveCount(0)
+  expect(clientErrors).toEqual([])
+})
+
 test("image attachments are previewed and serialized into the chat request", async ({
   page,
 }) => {
