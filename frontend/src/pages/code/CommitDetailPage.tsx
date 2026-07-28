@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom"
 
 import { Markdown } from "@/components/Markdown"
 import { formatRelativeDate } from "@/lib/format-date"
+import { useLocale } from "@/lib/i18n"
 import { DEFAULT_REPO } from "@/lib/repos"
 import { cn } from "@/lib/utils"
 import { DiffFile } from "@/pages/code/DiffFile"
@@ -43,6 +44,7 @@ function DiffStatBar({ additions, deletions }: { additions: number; deletions: n
 }
 
 export default function CommitDetailPage() {
+  const { locale, t } = useLocale()
   const { sha = "", repoName = DEFAULT_REPO } = useParams<{ sha: string; repoName: string }>()
   const { data: commit, isLoading, isError } = useRepoCommit(sha, repoName)
 
@@ -55,17 +57,19 @@ export default function CommitDetailPage() {
   }, [commit])
 
   if (isLoading) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+    return <p className="p-6 text-sm text-muted-foreground">{t("loading")}</p>
   }
   if (isError || !commit) {
-    return <p className="p-6 text-sm text-destructive">Failed to load commit.</p>
+    return <p className="p-6 text-sm text-destructive">{t("failedToLoadCommit")}</p>
   }
 
   return (
     <div className="flex h-full min-h-0">
       <aside className="flex h-full w-64 shrink-0 flex-col overflow-y-auto border-r">
         <div className="flex h-9 shrink-0 items-center border-b px-3 text-xs font-medium text-muted-foreground">
-          {commit.files.length} changed file{commit.files.length === 1 ? "" : "s"}
+          {commit.files.length === 1
+            ? t("oneChangedFile")
+            : t("changedFiles", { count: commit.files.length })}
         </div>
         {commit.files.map((file, i) => {
           const Icon = getFileIcon(file.path)
@@ -92,23 +96,23 @@ export default function CommitDetailPage() {
             className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
             <ChevronLeft className="size-4" />
-            Commits
+            {t("commits")}
           </Link>
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-xl font-semibold">
-              Commit <span className="font-mono">{commit.short_sha}</span>
+              {t("pageCommit")} <span className="font-mono">{commit.short_sha}</span>
             </h1>
             <Link
               to={`/code/${repoName}/tree/${commit.sha}`}
               className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="Browse the repository at this point in the history"
+              title={t("browseAtCommit")}
             >
               <Code className="size-3.5" />
-              Browse files
+              {t("browseFiles")}
             </Link>
           </div>
           <p className="text-sm text-muted-foreground">
-            {commit.author} committed {formatRelativeDate(commit.date)}
+            {commit.author} {t("committed", { date: formatRelativeDate(commit.date, locale) })}
           </p>
           <div className="rounded-md border bg-muted/30 p-3">
             <Markdown>{commit.message}</Markdown>
@@ -116,24 +120,28 @@ export default function CommitDetailPage() {
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             {commit.parents.length > 0 && (
               <span>
-                {commit.parents.length} parent{commit.parents.length > 1 ? "s" : ""}{" "}
+                {commit.parents.length === 1
+                  ? t("oneParent")
+                  : t("parentCount", { count: commit.parents.length })}{" "}
                 <span className="font-mono">{commit.parent_short}</span>
               </span>
             )}
             <span className="flex items-center gap-1">
-              commit <span className="font-mono">{commit.short_sha}</span>
+              {t("commitLabel")} <span className="font-mono">{commit.short_sha}</span>
               <button
                 type="button"
                 onClick={() => navigator.clipboard.writeText(commit.sha)}
                 className="rounded p-0.5 hover:bg-muted"
-                title="Copy full SHA"
+                title={t("copyFullSha")}
               >
                 <Copy className="size-3" />
               </button>
             </span>
             <span className="ml-auto flex items-center gap-2">
               <FileDiff className="size-4" />
-              {commit.files.length} file{commit.files.length === 1 ? "" : "s"} changed
+              {commit.files.length === 1
+                ? t("oneFileChanged")
+                : t("filesChanged", { count: commit.files.length })}
               <span className="text-green-600 dark:text-green-400">+{totals.additions}</span>
               <span className="text-red-600 dark:text-red-400">-{totals.deletions}</span>
               <DiffStatBar additions={totals.additions} deletions={totals.deletions} />

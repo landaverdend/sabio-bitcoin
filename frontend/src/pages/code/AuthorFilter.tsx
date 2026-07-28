@@ -2,6 +2,7 @@ import { ChevronDown, Search, Users } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useLocale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { Author } from "@/pages/code/hooks/use-repo-authors"
 import { useRepoAuthors } from "@/pages/code/hooks/use-repo-authors"
@@ -22,6 +23,7 @@ const AVATAR_COLORS = [
   "bg-fuchsia-500",
   "bg-pink-500",
 ]
+const EMPTY_AUTHORS: Author[] = []
 
 function hashString(value: string): number {
   let hash = 0
@@ -53,11 +55,12 @@ type AuthorFilterProps = {
 }
 
 export function AuthorFilter({ repoName, selected, onSelect }: AuthorFilterProps) {
+  const { locale, t } = useLocale()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const { data } = useRepoAuthors(repoName)
 
-  const authors: Author[] = data?.authors ?? []
+  const authors = data?.authors ?? EMPTY_AUTHORS
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     if (!query) return authors
@@ -76,7 +79,7 @@ export function AuthorFilter({ repoName, selected, onSelect }: AuthorFilterProps
         className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         <Users className="size-3.5" />
-        {selected ?? "All users"}
+        {selected ?? t("allUsers")}
         <ChevronDown className="size-3.5" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72">
@@ -86,7 +89,7 @@ export function AuthorFilter({ repoName, selected, onSelect }: AuthorFilterProps
             autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Find a user..."
+            placeholder={t("findUser")}
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
         </div>
@@ -107,12 +110,14 @@ export function AuthorFilter({ repoName, selected, onSelect }: AuthorFilterProps
               <AuthorAvatar name={author.name} />
               <span className="truncate">{author.name}</span>
               <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                {author.commit_count.toLocaleString()}
+                {author.commit_count.toLocaleString(locale)}
               </span>
             </button>
           ))}
           {filtered.length === 0 && (
-            <p className="px-2.5 py-3 text-center text-sm text-muted-foreground">No users found.</p>
+            <p className="px-2.5 py-3 text-center text-sm text-muted-foreground">
+              {t("noUsersFound")}
+            </p>
           )}
         </div>
         <button
@@ -123,7 +128,7 @@ export function AuthorFilter({ repoName, selected, onSelect }: AuthorFilterProps
           }}
           className="block w-full border-t px-2.5 py-2 text-center text-sm text-primary hover:bg-accent"
         >
-          View commits for all users
+          {t("viewAllUsers")}
         </button>
       </PopoverContent>
     </Popover>

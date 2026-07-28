@@ -11,6 +11,7 @@ import { useDeferredValue, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useLocale } from "@/lib/i18n"
 import { REPOS } from "@/lib/repos"
 import type {
   ChatAttachment,
@@ -23,13 +24,13 @@ import { usePeople } from "@/pages/people/hooks/use-people"
 
 type MenuPage = "main" | "repositories" | "people"
 
-function personName(person: PersonSummary): string {
+function personName(person: PersonSummary, unknownLabel: string): string {
   return (
     person.display_name ||
     person.github_username ||
     person.bitcointalk_username ||
     person.email ||
-    "Unknown person"
+    unknownLabel
   )
 }
 
@@ -40,9 +41,16 @@ function MenuHeader({
   title: string
   onBack: () => void
 }) {
+  const { t } = useLocale()
   return (
     <div className="flex h-10 items-center gap-2 border-b px-2">
-      <Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        onClick={onBack}
+        aria-label={t("back")}
+      >
         <ArrowLeft className="size-4" />
       </Button>
       <span className="text-sm font-medium">{title}</span>
@@ -61,6 +69,7 @@ export function AttachmentMenu({
   onAdd: (attachment: RepositoryAttachment | PersonAttachment) => void
   onChooseImages: () => void
 }) {
+  const { t } = useLocale()
   const [open, setOpen] = useState(false)
   const [page, setPage] = useState<MenuPage>("main")
   const [search, setSearch] = useState("")
@@ -103,7 +112,7 @@ export function AttachmentMenu({
             size="icon"
             disabled={disabled}
             className="shrink-0 rounded-full"
-            aria-label="Add images or context"
+            aria-label={t("addImagesOrContext")}
           />
         }
       >
@@ -114,11 +123,13 @@ export function AttachmentMenu({
         align="start"
         sideOffset={8}
         className="w-80 p-0"
-        aria-label="Add to your message"
+        aria-label={t("addToMessage")}
       >
         {page === "main" && (
           <div className="p-1.5">
-            <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Add</p>
+            <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+              {t("add")}
+            </p>
             <button
               type="button"
               onClick={() => {
@@ -128,7 +139,7 @@ export function AttachmentMenu({
               className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
             >
               <FileImage className="size-4 text-muted-foreground" />
-              Images
+              {t("images")}
               <span className="ml-auto text-xs text-muted-foreground">PNG, JPEG, WebP, GIF</span>
             </button>
             <button
@@ -137,7 +148,7 @@ export function AttachmentMenu({
               className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
             >
               <GitBranch className="size-4 text-muted-foreground" />
-              Repository
+              {t("repository")}
             </button>
             <button
               type="button"
@@ -145,14 +156,14 @@ export function AttachmentMenu({
               className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
             >
               <UserRound className="size-4 text-muted-foreground" />
-              Person
+              {t("person")}
             </button>
           </div>
         )}
 
         {page === "repositories" && (
           <>
-            <MenuHeader title="Add a repository" onBack={() => setPage("main")} />
+            <MenuHeader title={t("addRepository")} onBack={() => setPage("main")} />
             <div className="p-1.5">
               {REPOS.map((repo) => {
                 const selected = selectedRepoIds.has(repo.id)
@@ -178,7 +189,7 @@ export function AttachmentMenu({
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium">{repo.label}</span>
                       <span className="block text-xs text-muted-foreground">
-                        {selected ? "Already attached" : repo.id}
+                        {selected ? t("alreadyAttached") : repo.id}
                       </span>
                     </span>
                   </button>
@@ -190,15 +201,15 @@ export function AttachmentMenu({
 
         {page === "people" && (
           <>
-            <MenuHeader title="Add a person" onBack={() => setPage("main")} />
+            <MenuHeader title={t("addPerson")} onBack={() => setPage("main")} />
             <div className="border-b p-2">
               <label className="flex items-center gap-2 rounded-md border px-2.5 py-1.5">
                 <Search className="size-3.5 text-muted-foreground" />
-                <span className="sr-only">Search people</span>
+                <span className="sr-only">{t("searchPeople")}</span>
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search people…"
+                  placeholder={t("searchPeople")}
                   autoFocus
                   className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
@@ -211,15 +222,15 @@ export function AttachmentMenu({
                 </div>
               ) : peopleQuery.isError ? (
                 <p className="px-3 py-6 text-center text-sm text-destructive">
-                  Could not load people.
+                  {t("couldNotLoadPeople")}
                 </p>
               ) : peopleQuery.data?.people.length === 0 ? (
                 <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                  No people found.
+                  {t("noPeopleFound")}
                 </p>
               ) : (
                 peopleQuery.data?.people.map((person) => {
-                  const label = personName(person)
+                  const label = personName(person, t("unknownPerson"))
                   const selected = selectedPersonIds.has(person.id)
                   const detail = person.github_username
                     ? `GitHub: @${person.github_username}`
@@ -248,7 +259,7 @@ export function AttachmentMenu({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{label}</span>
                         <span className="block truncate text-xs text-muted-foreground">
-                          {selected ? "Already attached" : detail || "Person"}
+                          {selected ? t("alreadyAttached") : detail || t("person")}
                         </span>
                       </span>
                     </button>

@@ -11,28 +11,60 @@ from google.genai import types
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from backend import chat
+from backend.chat import content as chat_content
+from backend.chat import events as chat_events
+from backend.chat import models as chat_models
+from backend.chat import runtime as chat_runtime
+from backend.chat.constants import DISPLAY_MESSAGE_STATE_KEY
+from backend.chat.routes import stop_chat
 
 
 def test_chat_request_requires_bounded_uuid_session():
     with pytest.raises(ValidationError):
-        chat.ChatRequest(session_id="not-a-uuid", message="hello")
+        chat_models.ChatRequest(session_id="not-a-uuid", message="hello")
 
     with pytest.raises(ValidationError):
-        chat.ChatRequest(
+        chat_models.ChatRequest(
             session_id=uuid4(),
             message="hello",
-            context=[
-                {"path": f"file-{index}", "content": ""}
-                for index in range(9)
-            ],
+            context=[{"path": f"file-{index}", "content": ""} for index in range(9)],
         )
+
+
+def test_chat_request_accepts_supported_locales_only():
+    request = chat_models.ChatRequest(
+        session_id=uuid4(),
+        message="Hola",
+        locale="es",
+    )
+
+    assert request.locale == "es"
+
+    with pytest.raises(ValidationError):
+        chat_models.ChatRequest(
+            session_id=uuid4(),
+            message="Bonjour",
+            locale="fr",
+        )
+
+
+def test_spanish_locale_adds_response_guidance_without_translating_sources():
+    prompt = chat_content.build_prompt(
+        "¿Qué cambió?",
+        [],
+        locale="es",
+    )
+
+    assert "Respond in Spanish" in prompt
+    assert "source quotations in their original language" in prompt
+    assert "formulate tool searches in English" in prompt
+    assert prompt.endswith("¿Qué cambió?")
 
 
 def test_chat_request_validates_and_builds_multimodal_image_content():
     raw = b"\x89PNG\r\n\x1a\n" + b"image-bytes"
     data_url = f"data:image/png;base64,{base64.b64encode(raw).decode('ascii')}"
-    request = chat.ChatRequest(
+    request = chat_models.ChatRequest(
         session_id=uuid4(),
         message="What is this?",
         attachments=[
@@ -46,7 +78,11 @@ def test_chat_request_validates_and_builds_multimodal_image_content():
         ],
     )
 
-    content = chat._build_content(request.message, request.context, request.attachments)
+    content = chat_content.build_content(
+        request.message,
+        request.context,
+        request.attachments,
+    )
 
     assert len(content.parts) == 2
     assert "attached 1 image" in content.parts[0].text
@@ -54,7 +90,7 @@ def test_chat_request_validates_and_builds_multimodal_image_content():
     assert content.parts[1].inline_data.data == raw
 
     with pytest.raises(ValidationError):
-        chat.ChatRequest(
+        chat_models.ChatRequest(
             session_id=uuid4(),
             message="bad image",
             attachments=[
@@ -70,7 +106,7 @@ def test_chat_request_validates_and_builds_multimodal_image_content():
 
 
 def test_repository_and_person_attachments_ground_the_prompt():
-    request = chat.ChatRequest(
+    request = chat_models.ChatRequest(
         session_id=uuid4(),
         message="Compare their recent work",
         attachments=[
@@ -84,7 +120,11 @@ def test_repository_and_person_attachments_ground_the_prompt():
         ],
     )
 
-    prompt = chat._build_prompt(request.message, [], request.attachments)
+    prompt = chat_content.build_prompt(
+        request.message,
+        [],
+        request.attachments,
+    )
 
     assert "repo_name=core" in prompt
     assert "person_id=42" in prompt
@@ -99,11 +139,15 @@ def test_history_uses_display_message_instead_of_generated_prompt():
         author="user",
         content=types.Content(
             role="user",
-            parts=[types.Part(text="Attached context:\n\nsecret source\n\n---\n\nExplain this")],
+            parts=[
+                types.Part(
+                    text="Attached context:\n\nsecret source\n\n---\n\nExplain this"
+                )
+            ],
         ),
         actions=EventActions(
             state_delta={
-                chat._DISPLAY_MESSAGE_STATE_KEY: {
+                DISPLAY_MESSAGE_STATE_KEY: {
                     "message": "Explain this",
                     "context": [
                         {
@@ -117,7 +161,7 @@ def test_history_uses_display_message_instead_of_generated_prompt():
         ),
     )
 
-    assert chat._event_payloads(event) == [
+    assert chat_events.event_payloads(event) == [
         {
             "type": "user_message",
             "message": "Explain this",
@@ -150,7 +194,7 @@ def test_history_reconstructs_image_and_entity_attachments():
         ),
         actions=EventActions(
             state_delta={
-                chat._DISPLAY_MESSAGE_STATE_KEY: {
+                DISPLAY_MESSAGE_STATE_KEY: {
                     "message": "Inspect this",
                     "context": [],
                     "attachments": [
@@ -171,7 +215,7 @@ def test_history_reconstructs_image_and_entity_attachments():
         ),
     )
 
-    payload = chat._event_payloads(event)[0]
+    payload = chat_events.event_payloads(event)[0]
 
     assert payload["attachments"][0] == {
         "id": "event-image:attachment:0",
@@ -194,11 +238,13 @@ def test_legacy_history_hides_attached_prompt_envelope():
         author="user",
         content=types.Content(
             role="user",
-            parts=[types.Part(text="Attached context:\n\nsource\n\n---\n\nWhat changed?")],
+            parts=[
+                types.Part(text="Attached context:\n\nsource\n\n---\n\nWhat changed?")
+            ],
         ),
     )
 
-    assert chat._event_payloads(event)[0]["message"] == "What changed?"
+    assert chat_events.event_payloads(event)[0]["message"] == "What changed?"
 
 
 def test_read_file_result_becomes_interactive_source_reference():
@@ -216,11 +262,13 @@ def test_read_file_result_becomes_interactive_source_reference():
         author="sabio_repos",
         content=types.Content(
             role="user",
-            parts=[types.Part.from_function_response(name="read_file", response=response)],
+            parts=[
+                types.Part.from_function_response(name="read_file", response=response)
+            ],
         ),
     )
 
-    assert chat._event_payloads(event) == [
+    assert chat_events.event_payloads(event) == [
         {
             "type": "tool_result",
             "author": "sabio_repos",
@@ -252,7 +300,7 @@ def test_incomplete_read_file_result_does_not_render_broken_reference():
         ),
     )
 
-    assert chat._event_payloads(event) == [
+    assert chat_events.event_payloads(event) == [
         {
             "type": "tool_result",
             "author": "sabio_repos",
@@ -260,14 +308,19 @@ def test_incomplete_read_file_result_does_not_render_broken_reference():
         }
     ]
 
-    assert chat._source_reference({
-        "repo": "core",
-        "path": "short.cpp",
-        "ref": "master",
-        "start_line": 50,
-        "end_line": 49,
-        "github_url": "https://github.com/example",
-    }) is None
+    assert (
+        chat_events.source_reference(
+            {
+                "repo": "core",
+                "path": "short.cpp",
+                "ref": "master",
+                "start_line": 50,
+                "end_line": 49,
+                "github_url": "https://github.com/example",
+            }
+        )
+        is None
+    )
 
 
 def test_get_message_result_becomes_communication_source():
@@ -288,11 +341,13 @@ def test_get_message_result_becomes_communication_source():
         author="sabio_comms",
         content=types.Content(
             role="user",
-            parts=[types.Part.from_function_response(name="get_message", response=response)],
+            parts=[
+                types.Part.from_function_response(name="get_message", response=response)
+            ],
         ),
     )
 
-    assert chat._event_payloads(event) == [
+    assert chat_events.event_payloads(event) == [
         {
             "type": "tool_result",
             "author": "sabio_comms",
@@ -319,13 +374,15 @@ def test_search_result_does_not_become_final_communication_source():
             parts=[
                 types.Part.from_function_response(
                     name="search_messages",
-                    response={"result": [{"id": "message:42", "snippet": "not full evidence"}]},
+                    response={
+                        "result": [{"id": "message:42", "snippet": "not full evidence"}]
+                    },
                 )
             ],
         ),
     )
 
-    assert chat._event_payloads(event) == [
+    assert chat_events.event_payloads(event) == [
         {
             "type": "tool_result",
             "author": "sabio_comms",
@@ -353,11 +410,13 @@ def test_search_web_result_becomes_clickable_web_sources():
         author="sabio_repos",
         content=types.Content(
             role="user",
-            parts=[types.Part.from_function_response(name="search_web", response=response)],
+            parts=[
+                types.Part.from_function_response(name="search_web", response=response)
+            ],
         ),
     )
 
-    assert chat._event_payloads(event) == [
+    assert chat_events.event_payloads(event) == [
         {
             "type": "tool_result",
             "author": "sabio_repos",
@@ -373,11 +432,7 @@ def test_search_web_result_becomes_clickable_web_sources():
 
 class _FakeSessionService:
     def __init__(self):
-        self.sessions = [
-            SimpleNamespace(id=f"old-{index}", last_update_time=float(index), state={})
-            for index in range(chat._MAX_SESSIONS_PER_PUBKEY)
-        ]
-        self.deleted = []
+        self.sessions = []
 
     async def get_session(self, **_):
         return None
@@ -387,21 +442,42 @@ class _FakeSessionService:
         self.sessions.append(created)
         return created
 
-    async def list_sessions(self, **_):
-        return SimpleNamespace(sessions=self.sessions)
 
-    async def delete_session(self, *, session_id, **_):
-        self.deleted.append(session_id)
-        self.sessions = [session for session in self.sessions if session.id != session_id]
-
-
-def test_ensure_session_creates_then_prunes_oldest():
+def test_ensure_session_creates_without_pruning_existing_sessions():
     service = _FakeSessionService()
-    asyncio.run(chat._ensure_session(service, "pubkey", str(uuid4()), "  First question  "))
+    service.sessions = [
+        SimpleNamespace(id=f"old-{index}", last_update_time=float(index), state={})
+        for index in range(25)
+    ]
+    session_id = str(uuid4())
+    asyncio.run(
+        chat_runtime.ensure_session(
+            service,
+            "pubkey",
+            session_id,
+            "  First question  ",
+        )
+    )
 
-    assert service.deleted == ["old-0"]
-    assert len(service.sessions) == chat._MAX_SESSIONS_PER_PUBKEY
+    assert len(service.sessions) == 26
+    assert service.sessions[0].id == "old-0"
+    assert service.sessions[-1].id == session_id
     assert service.sessions[-1].state["title"] == "First question"
+
+
+def test_ensure_session_localizes_empty_spanish_title():
+    service = _FakeSessionService()
+    asyncio.run(
+        chat_runtime.ensure_session(
+            service,
+            "pubkey",
+            str(uuid4()),
+            "   ",
+            "es",
+        )
+    )
+
+    assert service.sessions[-1].state["title"] == "Nueva conversación"
 
 
 def test_ensure_session_treats_concurrent_duplicate_create_as_success():
@@ -421,21 +497,40 @@ def test_ensure_session_treats_concurrent_duplicate_create_as_success():
             raise IntegrityError("duplicate", {}, RuntimeError("unique violation"))
 
     service = RaceService()
-    asyncio.run(chat._ensure_session(service, "pubkey", intended_session, "hello"))
+    asyncio.run(
+        chat_runtime.ensure_session(
+            service,
+            "pubkey",
+            intended_session,
+            "hello",
+        )
+    )
 
     assert service.get_calls == 2
-    assert service.deleted == []
 
 
 def test_stream_reports_setup_errors_as_sse_and_always_finishes():
     async def collect():
         with (
-            patch.object(chat, "_get_session_runtime", return_value=(object(), object())),
-            patch.object(chat, "_ensure_session", new=AsyncMock(side_effect=RuntimeError("db down"))),
+            patch.object(
+                chat_runtime,
+                "get_session_runtime",
+                return_value=(object(), object()),
+            ),
+            patch.object(
+                chat_runtime,
+                "ensure_session",
+                new=AsyncMock(side_effect=RuntimeError("db down")),
+            ),
         ):
             return [
                 frame
-                async for frame in chat._stream("pubkey", str(uuid4()), "hello", [])
+                async for frame in chat_runtime.stream(
+                    "pubkey",
+                    str(uuid4()),
+                    "hello",
+                    [],
+                )
             ]
 
     frames = asyncio.run(collect())
@@ -462,12 +557,16 @@ def test_stream_stop_cancels_the_pending_agent_event():
                 finally:
                     closed.set()
 
-        chat._active_runs[active_run_key] = stop_event
+        chat_runtime._active_runs[active_run_key] = stop_event
         with (
-            patch.object(chat, "_get_session_runtime", return_value=(object(), WaitingRunner())),
-            patch.object(chat, "_ensure_session", new=AsyncMock()),
+            patch.object(
+                chat_runtime,
+                "get_session_runtime",
+                return_value=(object(), WaitingRunner()),
+            ),
+            patch.object(chat_runtime, "ensure_session", new=AsyncMock()),
         ):
-            stream = chat._stream(
+            stream = chat_runtime.stream(
                 active_run_key[0],
                 active_run_key[1],
                 "hello",
@@ -482,7 +581,7 @@ def test_stream_stop_cancels_the_pending_agent_event():
                 await asyncio.wait_for(next_frame, timeout=1)
 
         assert closed.is_set()
-        assert active_run_key not in chat._active_runs
+        assert active_run_key not in chat_runtime._active_runs
 
     asyncio.run(exercise())
 
@@ -496,18 +595,21 @@ def test_stop_chat_signals_only_the_addressed_run():
         other_key = (pubkey, str(session_id), str(uuid4()))
         active_stop = asyncio.Event()
         other_stop = asyncio.Event()
-        chat._active_runs[active_key] = active_stop
-        chat._active_runs[other_key] = other_stop
+        chat_runtime._active_runs[active_key] = active_stop
+        chat_runtime._active_runs[other_key] = other_stop
         try:
-            result = await chat.stop_chat(
-                chat.StopChatRequest(session_id=session_id, run_id=run_id),
+            result = await stop_chat(
+                chat_models.StopChatRequest(
+                    session_id=session_id,
+                    run_id=run_id,
+                ),
                 pubkey,
             )
             assert result == {"stopped": True}
             assert active_stop.is_set()
             assert not other_stop.is_set()
         finally:
-            chat._active_runs.pop(active_key, None)
-            chat._active_runs.pop(other_key, None)
+            chat_runtime._active_runs.pop(active_key, None)
+            chat_runtime._active_runs.pop(other_key, None)
 
     asyncio.run(exercise())

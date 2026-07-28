@@ -4,6 +4,7 @@ import { Tree, type NodeRendererProps } from "react-arborist"
 import useMeasure from "react-use-measure"
 
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/lib/i18n"
 import { buildTree, type FileNode } from "@/pages/code/build-tree"
 import { getFileIcon } from "@/pages/code/file-icons"
 import { useRepoTree } from "@/pages/code/hooks/use-repo-tree"
@@ -20,6 +21,7 @@ type FileTreeProps = {
 }
 
 export function FileTree({ onSelectFile, activePath, repoName, browseRef, onAddToContext }: FileTreeProps) {
+  const { t } = useLocale()
   const [measureRef, bounds] = useMeasure()
   const { data, isLoading, isError } = useRepoTree(repoName, browseRef)
 
@@ -59,7 +61,7 @@ export function FileTree({ onSelectFile, activePath, repoName, browseRef, onAddT
           {!isDir && onAddToContext && (
             <button
               type="button"
-              title="Add to chat"
+              title={t("addToChat")}
               onClick={(e) => {
                 e.stopPropagation()
                 onAddToContext(node.data.id)
@@ -73,12 +75,12 @@ export function FileTree({ onSelectFile, activePath, repoName, browseRef, onAddT
       )
     }
     return TreeNode
-  }, [onSelectFile, onAddToContext])
+  }, [onSelectFile, onAddToContext, t])
 
   return (
     <div ref={measureRef} className="h-full min-h-0 w-full overflow-hidden">
-      {isLoading && <p className="p-3 text-sm text-muted-foreground">Loading files…</p>}
-      {isError && <p className="p-3 text-sm text-destructive">Failed to load files.</p>}
+      {isLoading && <p className="p-3 text-sm text-muted-foreground">{t("loadingFiles")}</p>}
+      {isError && <p className="p-3 text-sm text-destructive">{t("failedToLoadFiles")}</p>}
       {!isLoading && !isError && bounds.height > 0 && (
         <Tree
           data={tree}

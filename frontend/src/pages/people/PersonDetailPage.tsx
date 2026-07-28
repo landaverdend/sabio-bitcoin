@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs"
 import { channelLabel } from "@/lib/channels"
 import { formatRelativeDate } from "@/lib/format-date"
+import { useLocale } from "@/lib/i18n"
 import { useRepoCommitPages, useRepoCommits } from "@/pages/code/hooks/use-repo-commits"
 import { PersonAvatar } from "@/pages/people/PersonAvatar"
 import { usePerson } from "@/pages/people/hooks/use-person"
@@ -15,11 +16,18 @@ import { usePersonMessagePages } from "@/pages/people/hooks/use-person-messages"
 
 const COMMITS_TAB = "commits"
 
-function personName(name: string | null, github: string | null, bitcointalk: string | null, email: string | null) {
-  return name || github || bitcointalk || email || "Unknown"
+function personName(
+  name: string | null,
+  github: string | null,
+  bitcointalk: string | null,
+  email: string | null,
+  unknownLabel: string,
+) {
+  return name || github || bitcointalk || email || unknownLabel
 }
 
 export default function PersonDetailPage() {
+  const { locale, t: translate } = useLocale()
   const { id = "" } = useParams()
   const { data: person, isLoading: personLoading } = usePerson(id)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -64,13 +72,13 @@ export default function PersonDetailPage() {
     if (!person) return []
     const list: { key: string; label: string; count: number }[] = []
     if (commitTotalForExistence > 0) {
-      list.push({ key: COMMITS_TAB, label: "Commits", count: commitTotalForExistence })
+      list.push({ key: COMMITS_TAB, label: translate("commits"), count: commitTotalForExistence })
     }
     for (const c of person.channels) {
-      list.push({ key: c.channel, label: channelLabel(c.channel), count: c.count })
+      list.push({ key: c.channel, label: channelLabel(c.channel, locale), count: c.count })
     }
     return list
-  }, [person, commitTotalForExistence])
+  }, [person, commitTotalForExistence, locale, translate])
 
   const requestedTab = searchParams.get("tab")
   const activeTab = tabs.some((t) => t.key === requestedTab) ? (requestedTab as string) : (tabs[0]?.key ?? "")
@@ -125,17 +133,23 @@ export default function PersonDetailPage() {
     )
   }
   if (!person) {
-    return <p className="p-6 text-sm text-destructive">Person not found.</p>
+    return <p className="p-6 text-sm text-destructive">{translate("personNotFound")}</p>
   }
 
-  const name = personName(person.display_name, person.github_username, person.bitcointalk_username, person.email)
+  const name = personName(
+    person.display_name,
+    person.github_username,
+    person.bitcointalk_username,
+    person.email,
+    translate("unknown"),
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       <div className="flex shrink-0 flex-col gap-4 border-b px-6 py-4">
         <Link to="/people" className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ChevronLeft className="size-4" />
-          People
+          {translate("people")}
         </Link>
         <div className="flex items-center gap-3">
           <PersonAvatar name={name} size="lg" />
@@ -151,7 +165,7 @@ export default function PersonDetailPage() {
 
         {person.identities.length > 1 && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span className="shrink-0">Also known as:</span>
+            <span className="shrink-0">{translate("alsoKnownAs")}</span>
             {person.identities
               .filter((i) => i.id !== person.id)
               .map((identity) => (
@@ -165,7 +179,7 @@ export default function PersonDetailPage() {
 
       <div className="flex-1 px-6 py-4">
         {tabs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No activity found for this person.</p>
+          <p className="text-sm text-muted-foreground">{translate("noActivity")}</p>
         ) : (
           <Tabs value={activeTab} onValueChange={(value) => selectTab(value as string)}>
             <TabsList>
@@ -173,7 +187,9 @@ export default function PersonDetailPage() {
                 <TabsTab key={t.key} value={t.key}>
                   {t.key === COMMITS_TAB && <GitCommitHorizontal className="size-3.5" />}
                   {t.label}
-                  <span className="text-xs text-muted-foreground">{t.count.toLocaleString()}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {t.count.toLocaleString(locale)}
+                  </span>
                 </TabsTab>
               ))}
             </TabsList>
@@ -190,7 +206,7 @@ export default function PersonDetailPage() {
                           setCommitSearch(e.target.value)
                           setCommitPageCount(1)
                         }}
-                        placeholder="Search commit messages..."
+                        placeholder={translate("searchCommitMessages")}
                         className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                       />
                     </div>
@@ -208,7 +224,9 @@ export default function PersonDetailPage() {
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-medium">{commit.message}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  committed {formatRelativeDate(commit.date)}
+                                  {translate("committed", {
+                                    date: formatRelativeDate(commit.date, locale),
+                                  })}
                                 </p>
                               </div>
                               <span className="shrink-0 font-mono text-xs text-muted-foreground">
@@ -218,7 +236,9 @@ export default function PersonDetailPage() {
                           ))}
                           {commits.length === 0 && (
                             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                              {commitQuery ? `No commits matching "${commitQuery}".` : "No commits found."}
+                              {commitQuery
+                                ? translate("noMatchingCommits", { query: commitQuery })
+                                : translate("noCommitsFound")}
                             </p>
                           )}
                         </>
@@ -231,7 +251,7 @@ export default function PersonDetailPage() {
                         disabled={commitsLoading}
                         onClick={() => setCommitPageCount((n) => n + 1)}
                       >
-                        {commitsLoading ? "Loading…" : "Load more"}
+                        {commitsLoading ? translate("loading") : translate("loadMore")}
                       </Button>
                     )}
                   </>
@@ -245,7 +265,7 @@ export default function PersonDetailPage() {
                           setMessageSearch(e.target.value)
                           setMessagePageCount(1)
                         }}
-                        placeholder={`Search ${t.label}...`}
+                        placeholder={translate("searchIn", { label: t.label })}
                         className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                       />
                     </div>
@@ -263,9 +283,11 @@ export default function PersonDetailPage() {
                               className={`flex items-start gap-3 px-4 py-3 hover:bg-accent ${i > 0 ? "border-t" : ""}`}
                             >
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium">{message.title || "(no subject)"}</p>
+                                <p className="truncate text-sm font-medium">
+                                  {message.title || translate("noSubject")}
+                                </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {formatRelativeDate(message.posted_at)}
+                                  {formatRelativeDate(message.posted_at, locale)}
                                 </p>
                                 {message.snippet && (
                                   <p className="mt-1 truncate text-xs text-muted-foreground">{message.snippet}</p>
@@ -276,7 +298,9 @@ export default function PersonDetailPage() {
                           ))}
                           {messages.length === 0 && (
                             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                              {messageQuery ? `No posts matching "${messageQuery}".` : "No posts found."}
+                              {messageQuery
+                                ? translate("noMatchingPosts", { query: messageQuery })
+                                : translate("noPostsFound")}
                             </p>
                           )}
                         </>
@@ -289,7 +313,7 @@ export default function PersonDetailPage() {
                         disabled={messagesLoading}
                         onClick={() => setMessagePageCount((n) => n + 1)}
                       >
-                        {messagesLoading ? "Loading…" : "Load more"}
+                        {messagesLoading ? translate("loading") : translate("loadMore")}
                       </Button>
                     )}
                   </>

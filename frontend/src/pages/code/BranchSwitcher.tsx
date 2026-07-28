@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { formatRelativeDate } from "@/lib/format-date"
+import { useLocale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { useRepoBranches } from "@/pages/code/hooks/use-repo-branches"
 
@@ -19,6 +20,7 @@ type BranchSwitcherProps = {
 }
 
 export function BranchSwitcher({ repoName, current, defaultHref, branchBasePath }: BranchSwitcherProps) {
+  const { locale } = useLocale()
   const [open, setOpen] = useState(false)
   const { data } = useRepoBranches(repoName)
   const branches = data?.branches ?? []
@@ -45,7 +47,7 @@ export function BranchSwitcher({ repoName, current, defaultHref, branchBasePath 
               <Check className={cn("size-3.5 shrink-0", branch.name !== current && "invisible")} />
               <span className="min-w-0 flex-1 truncate font-mono">{branch.name}</span>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {formatRelativeDate(branch.date)}
+                {formatRelativeDate(branch.date, locale)}
               </span>
             </Link>
           ))}

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react"
 import type { ReactNode } from "react"
+import { useLocale } from "@/lib/i18n"
 
 // Minimal NIP-07 surface -- the actual extension (Alby, nos2x, etc.) injects
 // this; we only ever call the two methods a login needs.
@@ -36,6 +37,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { t } = useLocale()
   const [pubkey, setPubkey] = useState<string | null>(null)
   const [checking, setChecking] = useState(true)
 
@@ -49,12 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async () => {
     if (!window.nostr) {
-      throw new Error("No Nostr extension found -- install one (e.g. Alby or nos2x) to log in.")
+      throw new Error(t("nostrMissing"))
     }
     const nostr = window.nostr
 
     const challengeRes = await fetch("/auth/challenge", { method: "POST", credentials: "include" })
-    if (!challengeRes.ok) throw new Error("Could not start login -- try again.")
+    if (!challengeRes.ok) throw new Error(t("loginStartError"))
     const { nonce }: { nonce: string } = await challengeRes.json()
 
     const nostrPubkey = await nostr.getPublicKey()
@@ -76,11 +78,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     if (!verifyRes.ok) {
       const body = await verifyRes.json().catch(() => null)
-      throw new Error(body?.detail || "Login failed -- signature could not be verified.")
+      throw new Error(body?.detail || t("loginVerifyError"))
     }
     const data: { pubkey: string } = await verifyRes.json()
     setPubkey(data.pubkey)
-  }, [])
+  }, [t])
 
   const logout = useCallback(async () => {
     await fetch("/auth/logout", { method: "POST", credentials: "include" })

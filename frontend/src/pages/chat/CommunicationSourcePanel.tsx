@@ -3,6 +3,8 @@ import { ExternalLink, MessageSquareQuote, X } from "lucide-react"
 import { Markdown } from "@/components/Markdown"
 import { Button } from "@/components/ui/button"
 import { channelLabel } from "@/lib/channels"
+import { useLocale } from "@/lib/i18n"
+import type { AppLocale } from "@/lib/locale"
 import type { CommunicationReference } from "@/pages/chat/hooks/use-chat"
 import { useCommunicationMessage } from "@/pages/chat/hooks/use-communication-message"
 
@@ -11,9 +13,9 @@ type CommunicationSourcePanelProps = {
   onClose: () => void
 }
 
-function fullDate(iso: string | null): string {
-  if (!iso) return "Unknown date"
-  return new Intl.DateTimeFormat(undefined, {
+function fullDate(iso: string | null, locale: AppLocale, unknownDate: string): string {
+  if (!iso) return unknownDate
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(iso))
@@ -23,6 +25,7 @@ export function CommunicationSourcePanel({
   source,
   onClose,
 }: CommunicationSourcePanelProps) {
+  const { locale, t } = useLocale()
   const message = useCommunicationMessage(source.messageId)
 
   return (
@@ -31,10 +34,11 @@ export function CommunicationSourcePanel({
         <MessageSquareQuote className="size-4 shrink-0 text-sabio" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium">
-            {source.author || "Unknown author"}
+            {source.author || t("unknownAuthor")}
           </p>
           <p className="truncate text-[11px] text-muted-foreground">
-            {channelLabel(source.channel)} · {fullDate(source.postedAt)}
+            {channelLabel(source.channel, locale)} ·{" "}
+            {fullDate(source.postedAt, locale, t("unknownDate"))}
           </p>
         </div>
         <Button
@@ -43,8 +47,8 @@ export function CommunicationSourcePanel({
               href={source.sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Open original archived message"
-              title="Open original source"
+              aria-label={t("openOriginalMessage")}
+              title={t("openOriginalSource")}
             />
           }
           variant="ghost"
@@ -57,7 +61,7 @@ export function CommunicationSourcePanel({
           variant="ghost"
           size="icon-sm"
           onClick={onClose}
-          aria-label="Close communication source"
+          aria-label={t("closeCommunication")}
         >
           <X className="size-3.5" />
         </Button>
@@ -66,26 +70,27 @@ export function CommunicationSourcePanel({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {message.isLoading && (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Loading archived message…
+            {t("loadingArchivedMessage")}
           </div>
         )}
         {message.isError && (
           <div className="flex h-full items-center justify-center p-4 text-center text-sm text-destructive">
-            Could not load this archived message.
+            {t("archivedMessageError")}
           </div>
         )}
         {message.data && (
           <article className="mx-auto max-w-3xl p-5">
             <div className="mb-5 border-b pb-4">
               <h2 className="text-lg font-semibold">
-                {message.data.title || "(no subject)"}
+                {message.data.title || t("noSubject")}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                {message.data.author || "Unknown author"}
+                {message.data.author || t("unknownAuthor")}
                 {message.data.email ? ` <${message.data.email}>` : ""}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {channelLabel(message.data.channel)} · {fullDate(message.data.posted_at)}
+                {channelLabel(message.data.channel, locale)} ·{" "}
+                {fullDate(message.data.posted_at, locale, t("unknownDate"))}
               </p>
             </div>
             <Markdown className="[&>*:first-child]:mt-0">

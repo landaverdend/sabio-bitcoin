@@ -13,6 +13,13 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import {
+  translate,
+  useLocale,
+  type TranslationKey,
+  type Translator,
+} from "@/lib/i18n"
+
 export type ToolCall = { detail?: string; done: boolean }
 
 export type SourceReference = {
@@ -48,7 +55,7 @@ export type ChatBlock =
 
 // A file or highlighted excerpt attached from the code panel -- content is
 // sent to the backend to be inlined directly into the model's prompt (see
-// backend/chat.py's ContextItem/_build_prompt), not just referenced by path,
+// backend/chat/content.py), not just referenced by path,
 // so the model is guaranteed to see exactly what was attached.
 export type ContextItem = {
   id: string
@@ -114,29 +121,32 @@ const SESSIONS_CHANGED_EVENT = "sabio:sessions-changed"
 // looked up, never who's looking it up, and the "handoff" events that name
 // the internal sub-agents are deliberately never surfaced (see handleEvent
 // below).
-const TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
-  get_commits: { label: "Looking up commits", icon: GitCommitHorizontal },
-  get_open_prs: { label: "Checking open PRs", icon: GitPullRequest },
-  get_pr_detail: { label: "Reading a PR", icon: GitPullRequest },
-  get_issues: { label: "Checking issues", icon: TicketCheck },
-  get_contributor_stats: { label: "Checking contributor stats", icon: Users },
-  list_directory: { label: "Browsing files", icon: Folder },
-  read_file: { label: "Reading a file", icon: FileText },
-  search_code: { label: "Searching code", icon: Search },
-  resolve: { label: "Resolving identity", icon: UserSearch },
-  get_message: { label: "Reading a message", icon: MessageSquare },
-  get_thread: { label: "Reading a thread", icon: MessageSquare },
+const TOOL_META: Record<string, { labelKey: TranslationKey; icon: LucideIcon }> = {
+  get_commits: { labelKey: "toolCommits", icon: GitCommitHorizontal },
+  get_open_prs: { labelKey: "toolOpenPrs", icon: GitPullRequest },
+  get_pr_detail: { labelKey: "toolReadPr", icon: GitPullRequest },
+  get_issues: { labelKey: "toolIssues", icon: TicketCheck },
+  get_contributor_stats: { labelKey: "toolContributors", icon: Users },
+  list_directory: { labelKey: "toolBrowseFiles", icon: Folder },
+  read_file: { labelKey: "toolReadFile", icon: FileText },
+  search_code: { labelKey: "toolSearchCode", icon: Search },
+  resolve: { labelKey: "toolResolveIdentity", icon: UserSearch },
+  get_message: { labelKey: "toolReadMessage", icon: MessageSquare },
+  get_thread: { labelKey: "toolReadThread", icon: MessageSquare },
   // Not "the mailing list" -- search_messages has no channel filter and
   // spans mailing list, its historical precursor lists, and BitcoinTalk in
   // one query, so a channel-specific label here would misrepresent what was
   // actually searched.
-  search_messages: { label: "Searching discussions", icon: Search },
-  search_web: { label: "Searching the web", icon: Globe2 },
-  now: { label: "Checking the current time", icon: Globe2 },
+  search_messages: { labelKey: "toolSearchDiscussions", icon: Search },
+  search_web: { labelKey: "toolSearchWeb", icon: Globe2 },
+  now: { labelKey: "toolCurrentTime", icon: Globe2 },
 }
 
-function toolMeta(tool: string): { label: string; icon: LucideIcon } {
-  return TOOL_META[tool] ?? { label: `Using ${tool}`, icon: Search }
+function toolMeta(tool: string, t: Translator): { label: string; icon: LucideIcon } {
+  const meta = TOOL_META[tool]
+  return meta
+    ? { label: t(meta.labelKey), icon: meta.icon }
+    : { label: t("toolUsing", { tool }), icon: Search }
 }
 
 // Which argument best answers "what specifically did this call do" once a
@@ -249,7 +259,7 @@ function webReference(
 // an entire conversation, so it re-implements the same merge rules (adjacent
 // text coalesces, adjacent same-tool calls group) as a straight fold over
 // the full list instead.
-function reduceEvents(events: StreamEvent[]): ChatMessage[] {
+function reduceEvents(events: StreamEvent[], t: Translator): ChatMessage[] {
   const messages: ChatMessage[] = []
 
   for (const event of events) {
@@ -288,7 +298,7 @@ function reduceEvents(events: StreamEvent[]): ChatMessage[] {
       if (lastBlock?.type === "tool" && lastBlock.tool === event.tool) {
         lastBlock.calls.push(call)
       } else {
-        const { label, icon } = toolMeta(event.tool)
+        const { label, icon } = toolMeta(event.tool, t)
         blocks.push({ type: "tool", tool: event.tool, label, icon, calls: [call] })
       }
     } else if (event.type === "source") {
@@ -329,14 +339,17 @@ async function fetchSessions(): Promise<ChatSessionSummary[]> {
   return requestJson<ChatSessionSummary[]>("/chat/sessions")
 }
 
-async function fetchSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+async function fetchSessionMessages(sessionId: string, t: Translator): Promise<ChatMessage[]> {
   const result = await requestJson<{ session_id: string; events: StreamEvent[] }>(
     `/chat/sessions/${sessionId}`,
   )
-  return reduceEvents(result.events)
+  return reduceEvents(result.events, t)
 }
 
 export function useChat(pubkey: string | null, restoreLatest = true) {
+  const { locale, t } = useLocale()
+  const localeRef = useRef(locale)
+  localeRef.current = locale
   const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID())
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
@@ -376,14 +389,21 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
         setSessions(stored)
         if (stored.length > 0) {
           const latest = stored[0]
-          const restored = await fetchSessionMessages(latest.session_id)
+          const restored = await fetchSessionMessages(
+            latest.session_id,
+            (key, values) => translate(localeRef.current, key, values),
+          )
           if (cancelled) return
           setSessionId(latest.session_id)
           setMessages(restored)
         }
       } catch (err) {
         if (!cancelled) {
-          setSessionError(err instanceof Error ? err.message : "Could not load conversations")
+          setSessionError(
+            err instanceof Error
+              ? err.message
+              : translate(localeRef.current, "errorLoadConversations"),
+          )
         }
       } finally {
         if (!cancelled) setIsLoadingHistory(false)
@@ -400,9 +420,30 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
     try {
       setSessions(await fetchSessions())
     } catch (err) {
-      setSessionError(err instanceof Error ? err.message : "Could not refresh conversations")
+      setSessionError(
+        err instanceof Error
+          ? err.message
+          : translate(localeRef.current, "errorRefreshConversations"),
+      )
     }
   }, [pubkey, restoreLatest])
+
+  useEffect(() => {
+    setMessages((current) =>
+      current.map((message) =>
+        message.role === "assistant"
+          ? {
+              ...message,
+              blocks: message.blocks.map((block) =>
+                block.type === "tool"
+                  ? { ...block, label: toolMeta(block.tool, t).label }
+                  : block,
+              ),
+            }
+          : message,
+      ),
+    )
+  }, [t])
 
   // CodeChatPanel deliberately owns an independent active chat, but those
   // conversations live in the same account. Refresh this shared list when
@@ -427,16 +468,16 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
       setIsLoadingHistory(true)
       setSessionError(null)
       try {
-        const restored = await fetchSessionMessages(nextSessionId)
+        const restored = await fetchSessionMessages(nextSessionId, t)
         setSessionId(nextSessionId)
         setMessages(restored)
       } catch (err) {
-        setSessionError(err instanceof Error ? err.message : "Could not load conversation")
+        setSessionError(err instanceof Error ? err.message : t("errorLoadConversation"))
       } finally {
         setIsLoadingHistory(false)
       }
     },
-    [isStreaming, sessionId],
+    [isStreaming, sessionId, t],
   )
 
   const deleteSession = useCallback(
@@ -454,19 +495,19 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
           if (remaining.length > 0) {
             const next = remaining[0]
             setSessionId(next.session_id)
-            setMessages(await fetchSessionMessages(next.session_id))
+            setMessages(await fetchSessionMessages(next.session_id, t))
           } else {
             setSessionId(crypto.randomUUID())
             setMessages([])
           }
         }
       } catch (err) {
-        setSessionError(err instanceof Error ? err.message : "Could not delete conversation")
+        setSessionError(err instanceof Error ? err.message : t("errorDeleteConversation"))
       } finally {
         setIsLoadingHistory(false)
       }
     },
-    [isStreaming, sessionId, sessions],
+    [isStreaming, sessionId, sessions, t],
   )
 
   const renameSession = useCallback(
@@ -489,10 +530,10 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
           ),
         )
       } catch (err) {
-        setSessionError(err instanceof Error ? err.message : "Could not rename conversation")
+        setSessionError(err instanceof Error ? err.message : t("errorRenameConversation"))
       }
     },
-    [],
+    [t],
   )
 
   const appendBlock = useCallback((block: ChatBlock) => {
@@ -534,13 +575,13 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
       if (lastBlock?.type === "tool" && lastBlock.tool === tool) {
         blocks[blocks.length - 1] = { ...lastBlock, calls: [...lastBlock.calls, call] }
       } else {
-        const { label, icon } = toolMeta(tool)
+        const { label, icon } = toolMeta(tool, t)
         blocks.push({ type: "tool", tool, label, icon, calls: [call] })
       }
       next[next.length - 1] = { ...last, blocks }
       return next
     })
-  }, [])
+  }, [t])
 
   const markLastToolDone = useCallback(() => {
     setMessages((prev) => {
@@ -594,6 +635,7 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
           body: JSON.stringify({
             session_id: sessionId,
             run_id: runId,
+            locale,
             message: text,
             context: context.map((c) => ({
               path: c.path,
@@ -672,7 +714,10 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
             } else if (event.type === "web_source") {
               appendBlock({ type: "web_source", source: webReference(event) })
             } else if (event.type === "error") {
-              appendBlock({ type: "text", text: `\n\n*Something went wrong: ${event.message}*` })
+              appendBlock({
+                type: "text",
+                text: `\n\n*${t("errorGeneric", { message: event.message })}*`,
+              })
             }
           }
         }
@@ -686,7 +731,9 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
         ) {
           appendBlock({
             type: "text",
-            text: `\n\n*Something went wrong: ${err instanceof Error ? err.message : "unknown error"}*`,
+            text: `\n\n*${t("errorGeneric", {
+              message: err instanceof Error ? err.message : t("unknown"),
+            })}*`,
           })
         }
       } finally {
@@ -698,7 +745,7 @@ export function useChat(pubkey: string | null, restoreLatest = true) {
         }
       }
     },
-    [sessionId, appendBlock, appendToolCall, markLastToolDone],
+    [sessionId, appendBlock, appendToolCall, locale, markLastToolDone, t],
   )
 
   const stopStreaming = useCallback(() => {

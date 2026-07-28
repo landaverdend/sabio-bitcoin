@@ -6,6 +6,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuth } from "@/lib/auth"
+import { useLocale, type TranslationKey } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { AttachmentMenu } from "@/pages/chat/AttachmentMenu"
 import { ChatAttachment as ChatAttachmentPreview } from "@/pages/chat/ChatAttachment"
@@ -22,11 +23,11 @@ import type {
 // Grounded in what Sabio can actually do (repos + comms tools) rather than
 // generic chatbot filler -- each one maps to a real, answerable query.
 const STARTERS = [
-  "What changed in the last week of commits?",
-  "Who are the most active contributors right now?",
-  "Any open PRs worth a look?",
-  "What's being discussed on the mailing list lately?",
-]
+  "starterChanges",
+  "starterContributors",
+  "starterPullRequests",
+  "starterDiscussions",
+] as const satisfies readonly TranslationKey[]
 
 const ACCEPTED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -38,12 +39,12 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const MAX_IMAGES = 4
 const MAX_ATTACHMENTS = 8
 
-function fileToDataUrl(file: File): Promise<string> {
+function fileToDataUrl(file: File, errorMessage: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.addEventListener("load", () => resolve(String(reader.result)))
     reader.addEventListener("error", () =>
-      reject(reader.error ?? new Error("Could not read image")),
+      reject(reader.error ?? new Error(errorMessage)),
     )
     reader.readAsDataURL(file)
   })
@@ -68,6 +69,7 @@ function EvidencePanel({
 
 export default function ChatPage() {
   const { pubkey, login } = useAuth()
+  const { t } = useLocale()
   const {
     sessionId,
     sessions,
@@ -122,21 +124,21 @@ export default function ChatPage() {
       if (availableSlots <= 0) {
         setAttachmentError(
           currentImageCount >= MAX_IMAGES
-            ? `You can attach up to ${MAX_IMAGES} images.`
-            : `You can attach up to ${MAX_ATTACHMENTS} items.`,
+            ? t("imageLimit", { count: MAX_IMAGES })
+            : t("attachmentLimit", { count: MAX_ATTACHMENTS }),
         )
         return
       }
 
       const images = files.filter((file) => ACCEPTED_IMAGE_TYPES.has(file.type))
       if (images.length !== files.length) {
-        setAttachmentError("Images must be PNG, JPEG, WebP, or GIF.")
+        setAttachmentError(t("imageTypesError"))
       } else {
         setAttachmentError(null)
       }
       const oversized = images.find((file) => file.size > MAX_IMAGE_BYTES)
       if (oversized) {
-        setAttachmentError(`${oversized.name} is larger than 5 MB.`)
+        setAttachmentError(t("imageTooLarge", { name: oversized.name }))
         return
       }
 
@@ -144,7 +146,9 @@ export default function ChatPage() {
       if (selected.length === 0) return
       if (images.length > availableSlots) {
         setAttachmentError(
-          `Only ${availableSlots} more attachment${availableSlots === 1 ? "" : "s"} can be added.`,
+          availableSlots === 1
+            ? t("attachmentRemaining")
+            : t("attachmentsRemaining", { count: availableSlots }),
         )
       }
 
@@ -157,18 +161,18 @@ export default function ChatPage() {
             name: file.name,
             mimeType: file.type,
             size: file.size,
-            dataUrl: await fileToDataUrl(file),
+            dataUrl: await fileToDataUrl(file, t("imageReadError")),
           })),
         )
         setAttachments((current) => [...current, ...nextImages])
       } catch {
-        setAttachmentError("One of those images could not be read.")
+        setAttachmentError(t("imageUnreadable"))
       } finally {
         setIsReadingImages(false)
         if (imageInputRef.current) imageInputRef.current.value = ""
       }
     },
-    [attachments],
+    [attachments, t],
   )
 
   const submit = (text: string) => {
@@ -194,8 +198,8 @@ export default function ChatPage() {
     const message =
       trimmed ||
       (attachments.some((attachment) => attachment.kind === "image")
-        ? "What can you tell me about the attached image?"
-        : "Tell me about the attached context.")
+        ? t("imageQuestion")
+        : t("contextQuestion"))
     const sentAttachments = attachments
     setAttachments([])
     setAttachmentError(null)
@@ -211,10 +215,10 @@ export default function ChatPage() {
             if (event.target.value) void loadSession(event.target.value)
           }}
           disabled={!pubkey || isStreaming || isLoadingHistory}
-          aria-label="Conversation"
+          aria-label={t("conversation")}
           className="min-w-0 flex-1 truncate rounded-md border bg-background px-2 py-1.5 text-sm"
         >
-          <option value="">New conversation</option>
+          <option value="">{t("newConversation")}</option>
           {sessions.map((session) => (
             <option key={session.session_id} value={session.session_id}>
               {session.title}
@@ -227,7 +231,7 @@ export default function ChatPage() {
           size="icon-sm"
           onClick={newSession}
           disabled={isStreaming || isLoadingHistory}
-          aria-label="New conversation"
+          aria-label={t("newConversation")}
         >
           <Plus className="size-4" />
         </Button>
@@ -238,7 +242,7 @@ export default function ChatPage() {
             size="icon-sm"
             onClick={() => void deleteSession(sessionId)}
             disabled={isStreaming || isLoadingHistory}
-            aria-label="Delete conversation"
+            aria-label={t("deleteConversation")}
             className="text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="size-4" />
@@ -254,20 +258,20 @@ export default function ChatPage() {
         ) : messages.length === 0 ? (
           <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center gap-5 p-6 text-center">
             <div className="space-y-1.5">
-              <h1 className="text-xl font-semibold tracking-tight">Ask Sabio</h1>
+              <h1 className="text-xl font-semibold tracking-tight">{t("askSabio")}</h1>
               <p className="text-sm text-muted-foreground">
-                Ask about Bitcoin Core code, contributors, and discussion.
+                {t("chatDescription")}
               </p>
             </div>
             <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-              {STARTERS.map((prompt) => (
+              {STARTERS.map((promptKey) => (
                 <button
-                  key={prompt}
+                  key={promptKey}
                   type="button"
-                  onClick={() => submit(prompt)}
+                  onClick={() => submit(t(promptKey))}
                   className="rounded-md border px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
-                  {prompt}
+                  {t(promptKey)}
                 </button>
               ))}
             </div>
@@ -357,7 +361,7 @@ export default function ChatPage() {
                 submit(input)
               }
             }}
-            placeholder="Message Sabio…"
+            placeholder={t("messageSabio")}
             rows={1}
             className="max-h-40 min-h-12 w-full resize-none bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground"
           />
@@ -368,7 +372,7 @@ export default function ChatPage() {
               onChooseImages={() => imageInputRef.current?.click()}
               onAdd={(attachment) => {
                 if (attachments.length >= MAX_ATTACHMENTS) {
-                  setAttachmentError(`You can attach up to ${MAX_ATTACHMENTS} items.`)
+                  setAttachmentError(t("attachmentLimit", { count: MAX_ATTACHMENTS }))
                   return
                 }
                 setAttachmentError(null)
@@ -378,7 +382,7 @@ export default function ChatPage() {
             {isReadingImages && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" />
-                Adding image
+                {t("addingImage")}
               </span>
             )}
             <span className="flex-1" />
@@ -387,7 +391,7 @@ export default function ChatPage() {
                 size="icon"
                 onClick={stopStreaming}
                 className="rounded-full bg-sabio text-sabio-foreground hover:bg-sabio/90"
-                aria-label="Stop generating"
+                aria-label={t("stopGenerating")}
               >
                 <Square className="size-3.5 fill-current" />
               </Button>
@@ -405,7 +409,7 @@ export default function ChatPage() {
                   (input.trim() || attachments.length > 0) &&
                     "bg-sabio text-sabio-foreground hover:bg-sabio/90",
                 )}
-                aria-label="Send message"
+                aria-label={t("sendMessage")}
               >
                 <ArrowUp className="size-4" />
               </Button>
@@ -413,12 +417,12 @@ export default function ChatPage() {
           </div>
           {isDraggingImages && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-background/90 text-sm font-medium text-sabio">
-              Drop images here
+              {t("dropImages")}
             </div>
           )}
         </div>
         <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-muted-foreground">
-          Sabio can make mistakes. Check linked sources for important details.
+          {t("disclaimer")}
         </p>
       </div>
     </div>
@@ -439,7 +443,7 @@ export default function ChatPage() {
             showCloseButton={false}
             className="w-[96vw] max-w-none gap-0 p-0"
           >
-            <SheetTitle className="sr-only">Referenced evidence</SheetTitle>
+            <SheetTitle className="sr-only">{t("referencedEvidence")}</SheetTitle>
             {selectedEvidence && (
               <EvidencePanel
                 selected={selectedEvidence}

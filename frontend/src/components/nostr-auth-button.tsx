@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar"
 import { useAuth } from "@/lib/auth"
+import { useLocale } from "@/lib/i18n"
 
 function truncate(pubkey: string): string {
   return `${pubkey.slice(0, 8)}…${pubkey.slice(-4)}`
@@ -16,6 +17,7 @@ function truncate(pubkey: string): string {
 
 export function NostrAuthButton() {
   const { pubkey, checking, login, logout } = useAuth()
+  const { t } = useLocale()
   const [error, setError] = useState<string | null>(null)
 
   // Nothing rendered while the initial /auth/me check is in flight -- a
@@ -28,14 +30,14 @@ export function NostrAuthButton() {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
-            tooltip="Log in with Nostr"
+            tooltip={t("logInWithNostr")}
             onClick={() => {
               setError(null)
               login().catch((err: Error) => setError(err.message))
             }}
           >
             <KeyRound />
-            <span>Connect Nostr</span>
+            <span>{t("connectNostr")}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
         {error && (
@@ -56,7 +58,7 @@ export function NostrAuthButton() {
           <DropdownMenuContent side="top" align="start">
             <DropdownMenuItem onClick={() => void logout()}>
               <LogOut />
-              <span>Log out</span>
+              <span>{t("logOut")}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

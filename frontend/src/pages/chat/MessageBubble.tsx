@@ -3,6 +3,7 @@ import { Code2, ExternalLink, Globe2, Loader2, MessageSquareQuote } from "lucide
 import { Markdown } from "@/components/Markdown"
 import { channelLabel } from "@/lib/channels"
 import { formatRelativeDate } from "@/lib/format-date"
+import { useLocale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { ChatAttachment } from "@/pages/chat/ChatAttachment"
 import { ContextChip } from "@/pages/chat/ContextChip"
@@ -67,6 +68,7 @@ function SourceChip({
   source: SourceReference
   onOpen?: (source: SourceReference) => void
 }) {
+  const { t } = useLocale()
   const lines =
     source.startLine === source.endLine
       ? `L${source.startLine}`
@@ -89,7 +91,7 @@ function SourceChip({
           type="button"
           onClick={() => onOpen(source)}
           className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left hover:bg-accent"
-          title={`Open ${source.path} at ${lines}`}
+          title={t("openPathAtLines", { path: source.path, lines })}
         >
           {content}
         </button>
@@ -107,8 +109,8 @@ function SourceChip({
         href={source.githubUrl}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label={`Open ${source.path} on GitHub`}
-        title="Open on GitHub"
+        aria-label={t("openPathOnGitHub", { path: source.path })}
+        title={t("openOnGitHub")}
         className="flex shrink-0 items-center border-l px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         <ExternalLink className="size-3.5" />
@@ -124,16 +126,18 @@ function CommunicationSourceChip({
   source: CommunicationReference
   onOpen?: (source: CommunicationReference) => void
 }) {
+  const { locale, t } = useLocale()
   const content = (
     <>
       <MessageSquareQuote className="mt-0.5 size-3.5 shrink-0 text-sabio" />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-medium text-foreground">
-            {source.author || "Unknown author"}
+            {source.author || t("unknownAuthor")}
           </span>
           <span className="shrink-0 text-muted-foreground">
-            · {channelLabel(source.channel)} · {formatRelativeDate(source.postedAt)}
+            · {channelLabel(source.channel, locale)} ·{" "}
+            {formatRelativeDate(source.postedAt, locale)}
           </span>
         </span>
         {source.title && (
@@ -155,7 +159,7 @@ function CommunicationSourceChip({
           type="button"
           onClick={() => onOpen(source)}
           className="flex min-w-0 flex-1 items-start gap-2 px-2.5 py-2 text-left hover:bg-accent"
-          title="Open archived message"
+          title={t("openArchivedMessage")}
         >
           {content}
         </button>
@@ -173,8 +177,8 @@ function CommunicationSourceChip({
         href={source.sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Open original communication source"
-        title="Open original source"
+        aria-label={t("openOriginalSource")}
+        title={t("openOriginalSource")}
         className="flex shrink-0 items-center border-l px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         <ExternalLink className="size-3.5" />
@@ -184,6 +188,7 @@ function CommunicationSourceChip({
 }
 
 function WebSourceChip({ source }: { source: WebReference }) {
+  const { t } = useLocale()
   let hostname = source.sourceUrl
   try {
     hostname = new URL(source.sourceUrl).hostname.replace(/^www\./, "")
@@ -198,7 +203,7 @@ function WebSourceChip({ source }: { source: WebReference }) {
       target="_blank"
       rel="noopener noreferrer"
       className="flex max-w-full items-center gap-2 rounded-lg border bg-muted/20 px-2.5 py-2 text-xs hover:bg-accent"
-      title={`Open source on ${hostname}`}
+      title={t("openSourceOn", { host: hostname })}
     >
       <Globe2 className="size-3.5 shrink-0 text-sabio" />
       <span className="min-w-0 flex-1">

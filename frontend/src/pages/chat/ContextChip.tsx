@@ -1,5 +1,6 @@
 import { X } from "lucide-react"
 
+import { useLocale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { getFileIcon } from "@/pages/code/file-icons"
 import type { ContextItem } from "@/pages/chat/hooks/use-chat"
@@ -18,6 +19,7 @@ type ContextChipProps = {
 }
 
 export function ContextChip({ item, onRemove, tone = "on-page" }: ContextChipProps) {
+  const { t } = useLocale()
   const Icon = getFileIcon(basename(item.path))
   const range = item.startLine ? `:${item.startLine}-${item.endLine}` : ""
 
@@ -39,6 +41,7 @@ export function ContextChip({ item, onRemove, tone = "on-page" }: ContextChipPro
         <button
           type="button"
           onClick={onRemove}
+          aria-label={t("removeItem", { name: basename(item.path) })}
           className="ml-0.5 shrink-0 rounded-full p-0.5 hover:bg-foreground/10"
         >
           <X className="size-3" />

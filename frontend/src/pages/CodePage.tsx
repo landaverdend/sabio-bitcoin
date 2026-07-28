@@ -3,6 +3,7 @@ import { MessageSquareText } from "lucide-react"
 import { useCallback, useState } from "react"
 import { useParams } from "react-router-dom"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
+import { useLocale } from "@/lib/i18n"
 import { DEFAULT_REPO } from "@/lib/repos"
 import type { ContextItem } from "@/pages/chat/hooks/use-chat"
 import { CodeChatPanel } from "@/pages/code/CodeChatPanel"
@@ -25,6 +26,7 @@ export default function CodePage() {
 }
 
 function CodePageAtRef({ repoName, browseRef }: { repoName: string; browseRef: string }) {
+  const { t } = useLocale()
   const queryClient = useQueryClient()
   const [openPaths, setOpenPaths] = useState<string[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
@@ -150,7 +152,7 @@ function CodePageAtRef({ repoName, browseRef }: { repoName: string; browseRef: s
         {!chatOpen && (
           <button
             type="button"
-            title="Ask Sabio about this code"
+            title={t("askAboutCode")}
             onClick={() => setChatOpen(true)}
             className="flex w-9 shrink-0 items-start justify-center border-l pt-2.5 text-muted-foreground hover:bg-accent hover:text-foreground"
           >

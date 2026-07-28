@@ -1,4 +1,4 @@
-.PHONY: help install frontend-install db-up db-down migrate backfill link-github scrape-bitcointalk backfill-bitcointalk-history backend agents frontend dev dev-all
+.PHONY: help install frontend-install db-up db-down migrate backfill link-github scrape-bitcointalk backfill-bitcointalk-history backend agents frontend dev dev-all test test-e2e test-all
 
 # Silence ADK's "[EXPERIMENTAL] ..." startup warnings (they flag ADK-internal
 # features we don't configure); everything else still surfaces normally.
@@ -16,6 +16,9 @@ help:
 	@echo "make backend           - run the backend API (foreground)"
 	@echo "make agents            - run the ADK web UI (foreground)"
 	@echo "make frontend          - run the frontend dev server (foreground)"
+	@echo "make test              - run the Python test suite"
+	@echo "make test-e2e          - run browser E2E tests with Playwright"
+	@echo "make test-all          - run Python, frontend, and browser checks"
 	@echo "make dev               - start db and apply migrations"
 	@echo "make dev-all           - run backend + frontend + agents together (foreground, Ctrl+C stops all)"
 
@@ -57,6 +60,17 @@ agents:
 
 frontend:
 	cd frontend && npm run dev
+
+test:
+	pytest -q
+
+test-e2e:
+	cd frontend && npm run test:e2e
+
+test-all: test
+	cd frontend && npm run lint
+	cd frontend && npm run build
+	cd frontend && npm run test:e2e
 
 dev: db-up migrate
 	@echo "Postgres is up and migrated. Run 'make backend' and 'make agents' in separate terminals."

@@ -8,30 +8,36 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar"
+import { useLocale, type TranslationKey } from "@/lib/i18n"
 
 const options = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
-] as const
+  { value: "light", labelKey: "themeLight", icon: Sun },
+  { value: "dark", labelKey: "themeDark", icon: Moon },
+  { value: "system", labelKey: "themeSystem", icon: Monitor },
+] as const satisfies ReadonlyArray<{
+  value: "light" | "dark" | "system"
+  labelKey: TranslationKey
+  icon: typeof Sun
+}>
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme()
+  const { t } = useLocale()
   const current = options.find((option) => option.value === theme) ?? options[2]
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<SidebarMenuButton tooltip="Theme" />}>
+          <DropdownMenuTrigger render={<SidebarMenuButton tooltip={t("theme")} />}>
             <current.icon />
-            <span>{current.label}</span>
+            <span>{t(current.labelKey)}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start">
             {options.map((option) => (
               <DropdownMenuItem key={option.value} onClick={() => setTheme(option.value)}>
                 <option.icon />
-                <span>{option.label}</span>
+                <span>{t(option.labelKey)}</span>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

@@ -1,5 +1,6 @@
 import { GitBranch, UserRound, X } from "lucide-react"
 
+import { useLocale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import type { ChatAttachment as ChatAttachmentValue } from "@/pages/chat/hooks/use-chat"
 
@@ -10,13 +11,14 @@ function EntityAttachment({
   attachment: Exclude<ChatAttachmentValue, { kind: "image" }>
   onRemove?: () => void
 }) {
+  const { t } = useLocale()
   const Icon = attachment.kind === "repository" ? GitBranch : UserRound
   const detail =
     attachment.kind === "repository"
-      ? "Repository"
+      ? t("repository")
       : attachment.githubUsername
         ? `@${attachment.githubUsername}`
-        : "Person"
+        : t("person")
 
   return (
     <span className="inline-flex max-w-56 items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-xs">
@@ -32,7 +34,7 @@ function EntityAttachment({
           type="button"
           onClick={onRemove}
           className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-          aria-label={`Remove ${attachment.label}`}
+          aria-label={t("removeItem", { name: attachment.label })}
         >
           <X className="size-3" />
         </button>
@@ -50,6 +52,7 @@ function ImageAttachment({
   onRemove?: () => void
   compact?: boolean
 }) {
+  const { t } = useLocale()
   return (
     <span
       className={cn(
@@ -67,7 +70,7 @@ function ImageAttachment({
           type="button"
           onClick={onRemove}
           className="absolute right-1.5 top-1.5 rounded-full bg-background/90 p-1 text-foreground shadow-sm hover:bg-background"
-          aria-label={`Remove ${attachment.name}`}
+          aria-label={t("removeItem", { name: attachment.name })}
         >
           <X className="size-3.5" />
         </button>

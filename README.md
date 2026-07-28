@@ -98,7 +98,7 @@ The main application layers are:
 ## Prerequisites
 
 - Python **3.12.11** (the pinned version is in `.python-version`)
-- Node.js **22** recommended (the Docker build uses Node 22)
+- Node.js **22.12+** (Vite 8 requires a current Node runtime)
 - Docker with Docker Compose
 - An OpenAI API key
 - A NIP-07-compatible Nostr browser extension for interactive login
@@ -256,8 +256,7 @@ challenge:
 4. The public key becomes the user identifier for persisted ADK sessions.
 
 Conversation history, attachment metadata, tool activity, and citations survive page
-reloads. Each identity can keep up to 20 sessions; the oldest sessions are pruned
-after the limit is exceeded.
+reloads. Sessions remain available until the user deletes them.
 
 Image attachments are validated on both the client and server:
 
@@ -265,6 +264,13 @@ Image attachments are validated on both the client and server:
 - Up to 4 images per message
 - Up to 5 MB per image
 - Images are sent to the model as multimodal input parts
+
+Chat requests also accept a `locale` of `en` or `es` (`en` by default). The
+sidebar language switch persists the app locale and translates the interface,
+dates, activity labels, and chat controls. The frontend sends that same locale
+with each chat request. Sabio keeps one canonical set of agent instructions and
+adds response-language guidance per request, preserving source quotations,
+code, identifiers, and URLs in their original form.
 
 ## Testing
 
@@ -281,6 +287,22 @@ cd frontend
 npm run lint
 npm run build
 ```
+
+Run the Playwright browser suite. It starts Vite automatically and uses
+deterministic API/SSE mocks, so it does not require PostgreSQL, a Nostr
+extension, external APIs, or an OpenAI key:
+
+```bash
+cd frontend
+npx playwright install chromium # first run only
+npm run test:e2e
+```
+
+The browser suite covers language switching and persistence, exact chat
+request payloads, streamed responses, image selection, repository/person
+context, run-specific Stop requests, and persisted-session loading/deletion.
+Failure artifacts are written to `frontend/test-results/`;
+`npm run test:e2e:ui` opens Playwright's interactive runner.
 
 With PostgreSQL, the backend, and the frontend running, exercise Nostr login,
 streaming chat, persistence, and cleanup using a disposable in-memory identity:
@@ -330,7 +352,8 @@ Apply migrations to the production database before serving traffic.
 
 ```text
 agents/       Google ADK coordinator, specialists, and agent tools
-backend/      FastAPI routes, Nostr authentication, and chat streaming
+backend/      FastAPI application and domain route modules
+  chat/       Chat models, prompt content, event translation, runtime, and routes
 db/           PostgreSQL connection helpers, Docker Compose, and migrations
 frontend/     React application and production frontend build
 jobs/         Recurring incremental synchronization jobs

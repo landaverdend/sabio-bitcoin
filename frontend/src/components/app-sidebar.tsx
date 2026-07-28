@@ -4,6 +4,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom"
 
 import { NostrAuthButton } from "@/components/nostr-auth-button"
 import { SabioMark } from "@/components/sabio-mark"
+import { LanguageToggle } from "@/components/language-toggle"
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
   Sidebar,
@@ -20,19 +21,26 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { useAuth } from "@/lib/auth"
+import { useLocale, type TranslationKey } from "@/lib/i18n"
 import { DEFAULT_REPO } from "@/lib/repos"
 import { useAppChat } from "@/pages/chat/chat-context"
 
 const items = [
-  { to: "/chat", label: "Chat", icon: MessageCircle },
-  { to: `/code/${DEFAULT_REPO}`, label: "Code", icon: Code2, matchPrefix: "/code" },
-  { to: "/people", label: "People", icon: Users },
-]
+  { to: "/chat", labelKey: "navChat", icon: MessageCircle },
+  { to: `/code/${DEFAULT_REPO}`, labelKey: "navCode", icon: Code2, matchPrefix: "/code" },
+  { to: "/people", labelKey: "navPeople", icon: Users },
+] as const satisfies ReadonlyArray<{
+  to: string
+  labelKey: TranslationKey
+  icon: typeof MessageCircle
+  matchPrefix?: string
+}>
 
 export function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { pubkey } = useAuth()
+  const { t } = useLocale()
   const {
     sessionId,
     sessions,
@@ -92,11 +100,13 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
                     render={<NavLink to={item.to} />}
-                    isActive={location.pathname.startsWith(item.matchPrefix ?? item.to)}
-                    tooltip={item.label}
+                    isActive={location.pathname.startsWith(
+                      "matchPrefix" in item ? item.matchPrefix : item.to,
+                    )}
+                    tooltip={t(item.labelKey)}
                   >
                     <item.icon />
-                    <span>{item.label}</span>
+                    <span>{t(item.labelKey)}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -105,12 +115,12 @@ export function AppSidebar() {
         </SidebarGroup>
         {pubkey && (
           <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-            <SidebarGroupLabel>Conversations</SidebarGroupLabel>
+            <SidebarGroupLabel>{t("conversations")}</SidebarGroupLabel>
             <SidebarGroupAction
               onClick={startNewConversation}
               disabled={isStreaming || isLoadingHistory}
-              aria-label="New conversation"
-              title="New conversation"
+              aria-label={t("newConversation")}
+              title={t("newConversation")}
             >
               <Plus />
             </SidebarGroupAction>
@@ -118,11 +128,11 @@ export function AppSidebar() {
               {isLoadingHistory && sessions.length === 0 ? (
                 <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
                   <Loader2 className="size-3.5 animate-spin" />
-                  Loading conversations
+                  {t("loadingConversations")}
                 </div>
               ) : sessions.length === 0 ? (
                 <p className="px-2 py-2 text-xs text-muted-foreground">
-                  Your conversations will appear here.
+                  {t("noConversations")}
                 </p>
               ) : (
                 <SidebarMenu>
@@ -163,8 +173,8 @@ export function AppSidebar() {
                           className="right-6"
                           onClick={() => startRename(session.session_id, session.title)}
                           disabled={isStreaming || isLoadingHistory}
-                          aria-label={`Rename ${session.title}`}
-                          title="Rename conversation"
+                          aria-label={`${t("renameConversation")}: ${session.title}`}
+                          title={t("renameConversation")}
                         >
                           <SquarePen />
                         </SidebarMenuAction>
@@ -172,8 +182,8 @@ export function AppSidebar() {
                           showOnHover
                           onClick={() => void deleteSession(session.session_id)}
                           disabled={isStreaming || isLoadingHistory}
-                          aria-label={`Delete ${session.title}`}
-                          title="Delete conversation"
+                          aria-label={`${t("deleteConversation")}: ${session.title}`}
+                          title={t("deleteConversation")}
                         >
                           <Trash2 />
                         </SidebarMenuAction>
@@ -191,6 +201,7 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <NostrAuthButton />
+        <LanguageToggle />
         <ThemeToggle />
       </SidebarFooter>
     </Sidebar>

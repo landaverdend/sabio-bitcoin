@@ -6,7 +6,7 @@ issued nonce with the user's own key, proving ownership of that pubkey
 without the key or any secret ever touching this server. On success the
 pubkey is stored in a signed session cookie (Starlette's SessionMiddleware,
 see backend/main.py) and becomes the ADK session user_id for everything
-else (see backend/chat.py) -- ADK already keys every session operation by
+else (see backend/chat/) -- ADK already keys every session operation by
 user_id, so a pubkey slots into that dimension with no schema of our own.
 """
 
@@ -89,7 +89,7 @@ def logout(request: Request) -> dict:
 
 def get_current_pubkey(request: Request) -> str:
     """FastAPI dependency for any route that needs an authenticated Nostr
-    identity -- backend/chat.py uses this to scope ADK sessions by pubkey."""
+    identity -- backend/chat/ uses this to scope ADK sessions by pubkey."""
     pubkey = request.session.get("pubkey")
     if not pubkey:
         raise HTTPException(status_code=401, detail="not logged in")

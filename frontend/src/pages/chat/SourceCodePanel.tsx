@@ -3,6 +3,7 @@ import { ExternalLink, FileCode2, X } from "lucide-react"
 
 import { useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
+import { useLocale } from "@/lib/i18n"
 import { repoLabel } from "@/lib/repos"
 import type { SourceReference } from "@/pages/chat/hooks/use-chat"
 import { useRepoFile } from "@/pages/code/hooks/use-repo-file"
@@ -19,14 +20,15 @@ function basename(path: string): string {
 
 export function SourceCodePanel({ source, onClose }: SourceCodePanelProps) {
   const { theme } = useTheme()
+  const { t } = useLocale()
   const isDark =
     theme === "dark" ||
     (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
   const file = useRepoFile(source.path, source.repo, source.ref)
   const lineLabel =
     source.startLine === source.endLine
-      ? `Line ${source.startLine}`
-      : `Lines ${source.startLine}–${source.endLine}`
+      ? t("line", { line: source.startLine })
+      : t("lines", { start: source.startLine, end: source.endLine })
   const editorKey = `${source.repo}:${source.ref}:${source.path}:${source.startLine}:${source.endLine}`
 
   return (
@@ -47,8 +49,8 @@ export function SourceCodePanel({ source, onClose }: SourceCodePanelProps) {
               href={source.githubUrl}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Open cited lines on GitHub"
-              title="Open on GitHub"
+              aria-label={t("openCitedLines")}
+              title={t("openOnGitHub")}
             />
           }
           variant="ghost"
@@ -61,7 +63,7 @@ export function SourceCodePanel({ source, onClose }: SourceCodePanelProps) {
           variant="ghost"
           size="icon-sm"
           onClick={onClose}
-          aria-label="Close source viewer"
+          aria-label={t("closeSource")}
         >
           <X className="size-3.5" />
         </Button>
@@ -70,17 +72,17 @@ export function SourceCodePanel({ source, onClose }: SourceCodePanelProps) {
       <div className="min-h-0 flex-1">
         {file.isLoading && (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Loading source…
+            {t("loadingSource")}
           </div>
         )}
         {file.isError && (
           <div className="flex h-full items-center justify-center p-4 text-center text-sm text-destructive">
-            Could not load this source from GitHub.
+            {t("sourceLoadError")}
           </div>
         )}
         {file.data?.binary && (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            This file is binary.
+            {t("binarySource")}
           </div>
         )}
         {file.data && !file.data.binary && (

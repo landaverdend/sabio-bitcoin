@@ -1,6 +1,7 @@
 import { DiffEditor } from "@monaco-editor/react"
 
 import { useTheme } from "@/components/theme-provider"
+import { useLocale } from "@/lib/i18n"
 import { getFileIcon } from "@/pages/code/file-icons"
 import type { CommitFile } from "@/pages/code/hooks/use-repo-commit"
 import { useRepoFile } from "@/pages/code/hooks/use-repo-file"
@@ -19,6 +20,7 @@ function basename(path: string): string {
 
 export function DiffFile({ file, repoName, sha, parentSha }: DiffFileProps) {
   const { theme } = useTheme()
+  const { t } = useLocale()
   const isDark =
     theme === "dark" ||
     (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
@@ -48,9 +50,9 @@ export function DiffFile({ file, repoName, sha, parentSha }: DiffFileProps) {
           <span className="text-red-600 dark:text-red-400">-{file.deletions}</span>
         </span>
       </div>
-      {isLoading && <p className="p-3 text-sm text-muted-foreground">Loading…</p>}
+      {isLoading && <p className="p-3 text-sm text-muted-foreground">{t("loading")}</p>}
       {!isLoading && isBinary && (
-        <p className="p-3 text-sm text-muted-foreground">Binary file not shown.</p>
+        <p className="p-3 text-sm text-muted-foreground">{t("binaryFileHidden")}</p>
       )}
       {!isLoading && !isBinary && (
         <DiffEditor

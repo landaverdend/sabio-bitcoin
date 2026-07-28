@@ -2,6 +2,7 @@ import { ArrowLeft, GitCommitHorizontal, History } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { formatRelativeDate } from "@/lib/format-date"
+import { useLocale } from "@/lib/i18n"
 import { BranchSwitcher } from "@/pages/code/BranchSwitcher"
 import { RepoSwitcher } from "@/pages/code/RepoSwitcher"
 import { useRepoBranches } from "@/pages/code/hooks/use-repo-branches"
@@ -14,6 +15,7 @@ type RepoHeaderProps = {
 }
 
 export function RepoHeader({ repoName, browseRef }: RepoHeaderProps) {
+  const { locale, t } = useLocale()
   const { data: branchesData } = useRepoBranches(repoName)
   const matchedBranch = branchesData?.branches.find((b) => b.ref === browseRef)
   const isHead = browseRef === "HEAD"
@@ -34,14 +36,14 @@ export function RepoHeader({ repoName, browseRef }: RepoHeaderProps) {
       <div className="flex h-10 shrink-0 items-center gap-4 border-b bg-accent/40 px-4 text-sm">
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
           <GitCommitHorizontal className="size-4" />
-          Browsing at
+          {t("browsingAt")}
           <span className="font-mono text-foreground">{commit?.short_sha ?? browseRef.slice(0, 7)}</span>
         </span>
         {commit && (
           <span className="min-w-0 flex-1 truncate text-muted-foreground">
             <span className="text-foreground">{commit.message}</span>
             {" · "}
-            {commit.author} committed {formatRelativeDate(commit.date)}
+            {commit.author} {t("committed", { date: formatRelativeDate(commit.date, locale) })}
           </span>
         )}
         <Link
@@ -49,7 +51,11 @@ export function RepoHeader({ repoName, browseRef }: RepoHeaderProps) {
           className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" />
-          Back to {branchesData?.branches.find((b) => b.is_default)?.name ?? "default branch"}
+          {t("backTo", {
+            branch:
+              branchesData?.branches.find((b) => b.is_default)?.name ??
+              t("defaultBranch"),
+          })}
         </Link>
       </div>
     )
@@ -78,14 +84,17 @@ export function RepoHeader({ repoName, browseRef }: RepoHeaderProps) {
           >
             <span className="text-foreground">{data.latest_commit.message}</span>
             {" · "}
-            {data.latest_commit.short_sha} committed {formatRelativeDate(data.latest_commit.date)}
+            {data.latest_commit.short_sha}{" "}
+            {t("committed", {
+              date: formatRelativeDate(data.latest_commit.date, locale),
+            })}
           </Link>
           <Link
             to={commitsHref}
             className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <History className="size-3.5" />
-            {data.commit_count.toLocaleString()} commits
+            {t("commitCount", { count: data.commit_count.toLocaleString(locale) })}
           </Link>
         </>
       )}

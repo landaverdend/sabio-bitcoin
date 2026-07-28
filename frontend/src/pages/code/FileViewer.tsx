@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { useTheme } from "@/components/theme-provider"
 import { formatRelativeDate } from "@/lib/format-date"
+import { useLocale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { getFileIcon } from "@/pages/code/file-icons"
 import { useRepoBlame } from "@/pages/code/hooks/use-repo-blame"
@@ -38,6 +39,7 @@ export function FileViewer({
   onAddSelection,
 }: FileViewerProps) {
   const { theme } = useTheme()
+  const { locale, t } = useLocale()
   const isDark =
     theme === "dark" ||
     (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
@@ -95,7 +97,7 @@ export function FileViewer({
         // is what makes Monaco render them anyway.
         showIfCollapsed: true,
         after: {
-          content: `  ${entry.author}, ${formatRelativeDate(entry.date)} • ${entry.summary}`,
+          content: `  ${entry.author}, ${formatRelativeDate(entry.date, locale)} • ${entry.summary}`,
           inlineClassName: "blame-annotation",
         },
       },
@@ -105,13 +107,13 @@ export function FileViewer({
       decorationsRef.current = editor.createDecorationsCollection()
     }
     decorationsRef.current.set([decoration])
-  }, [currentLine, blameResult.data, activePath])
+  }, [currentLine, blameResult.data, activePath, locale])
 
   if (openPaths.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <h1 className="text-xl font-semibold">Code</h1>
-        <p className="text-muted-foreground">Select a file to view its contents.</p>
+        <h1 className="text-xl font-semibold">{t("navCode")}</h1>
+        <p className="text-muted-foreground">{t("selectFile")}</p>
       </div>
     )
   }
@@ -153,13 +155,13 @@ export function FileViewer({
       </div>
       <div className="relative min-h-0 flex-1">
         {activeResult?.isLoading && (
-          <p className="p-3 text-sm text-muted-foreground">Loading…</p>
+          <p className="p-3 text-sm text-muted-foreground">{t("loading")}</p>
         )}
         {activeResult?.isError && (
-          <p className="p-3 text-sm text-destructive">Failed to load file.</p>
+          <p className="p-3 text-sm text-destructive">{t("failedToLoadFile")}</p>
         )}
         {activeResult?.data?.binary && (
-          <p className="p-3 text-sm text-muted-foreground">Binary file -- cannot display.</p>
+          <p className="p-3 text-sm text-muted-foreground">{t("binaryFile")}</p>
         )}
         {activeResult?.data && !activeResult.data.binary && activePath && (
           <Editor

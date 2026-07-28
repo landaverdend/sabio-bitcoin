@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth"
+import { useLocale } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { ContextChip } from "@/pages/chat/ContextChip"
 import { MessageBubble } from "@/pages/chat/MessageBubble"
@@ -35,6 +36,7 @@ export function CodeChatPanel({
   onAddFile,
 }: CodeChatPanelProps) {
   const { pubkey, login } = useAuth()
+  const { t } = useLocale()
   const { messages, sendMessage, stopStreaming, isStreaming } = useChat(pubkey, false)
   const [input, setInput] = useState("")
   const [authError, setAuthError] = useState<string | null>(null)
@@ -61,15 +63,20 @@ export function CodeChatPanel({
       return
     }
     setInput("")
-    void sendMessage(text || "Explain the attached code.", contextItems)
+    void sendMessage(text || t("explainAttachedCode"), contextItems)
     onClearContext()
   }
 
   return (
     <div className="flex h-full flex-col border-l">
       <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-xs font-medium text-muted-foreground">
-        Ask Sabio
-        <button type="button" onClick={onClose} className="rounded p-1 hover:bg-accent hover:text-foreground">
+        {t("askSabio")}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t("close")}
+          className="rounded p-1 hover:bg-accent hover:text-foreground"
+        >
           <X className="size-3.5" />
         </button>
       </div>
@@ -78,7 +85,7 @@ export function CodeChatPanel({
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1.5 p-6 text-center">
             <p className="text-sm text-muted-foreground">
-              Ask about this file, or highlight a range and add it below.
+              {t("codePanelDescription")}
             </p>
           </div>
         ) : (
@@ -115,7 +122,7 @@ export function CodeChatPanel({
                 submit()
               }
             }}
-            placeholder="Ask about this code…"
+            placeholder={t("askAboutThisCode")}
             rows={1}
             className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-sabio/40 focus-visible:ring-3 focus-visible:ring-sabio/15"
           />
@@ -124,7 +131,7 @@ export function CodeChatPanel({
               size="icon"
               onClick={stopStreaming}
               className="rounded-full bg-sabio text-sabio-foreground hover:bg-sabio/90"
-              aria-label="Stop generating"
+              aria-label={t("stopGenerating")}
             >
               <Square className="size-3 fill-current" />
             </Button>
@@ -134,6 +141,7 @@ export function CodeChatPanel({
               onClick={submit}
               disabled={(!input.trim() && contextItems.length === 0) || hasPendingContext}
               className={cn("rounded-full", input.trim() && "bg-sabio text-sabio-foreground hover:bg-sabio/90")}
+              aria-label={t("sendMessage")}
             >
               <ArrowUp className="size-4" />
             </Button>

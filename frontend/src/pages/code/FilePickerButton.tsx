@@ -2,6 +2,7 @@ import { Plus, Search } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useLocale } from "@/lib/i18n"
 import { getFileIcon } from "@/pages/code/file-icons"
 import { useRepoTree } from "@/pages/code/hooks/use-repo-tree"
 
@@ -22,6 +23,7 @@ type FilePickerButtonProps = {
 }
 
 export function FilePickerButton({ repoName, browseRef, openPaths, onSelectFile }: FilePickerButtonProps) {
+  const { t } = useLocale()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
   const { data } = useRepoTree(repoName, browseRef)
@@ -49,7 +51,7 @@ export function FilePickerButton({ repoName, browseRef, openPaths, onSelectFile 
       }}
     >
       <PopoverTrigger
-        title="Add a file"
+        title={t("addFile")}
         className="flex size-9 shrink-0 items-center justify-center rounded-xl border text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         <Plus className="size-4" />
@@ -61,7 +63,7 @@ export function FilePickerButton({ repoName, browseRef, openPaths, onSelectFile 
             autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Find a file..."
+            placeholder={t("findFile")}
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
         </div>
@@ -86,7 +88,9 @@ export function FilePickerButton({ repoName, browseRef, openPaths, onSelectFile 
             )
           })}
           {results.length === 0 && (
-            <p className="px-2.5 py-3 text-center text-sm text-muted-foreground">No files found.</p>
+            <p className="px-2.5 py-3 text-center text-sm text-muted-foreground">
+              {t("noFilesFound")}
+            </p>
           )}
         </div>
       </PopoverContent>

@@ -2,13 +2,10 @@ import { Calendar, ChevronLeft, ChevronRight } from "lucide-react"
 import { useState } from "react"
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useLocale } from "@/lib/i18n"
+import type { AppLocale } from "@/lib/locale"
 import { cn } from "@/lib/utils"
 
-const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-]
 // Bitcoin Core's first commit is 2009 -- a fixed range covers the whole repo
 // history without needing to derive it from data just for a <select>.
 const YEARS = Array.from({ length: new Date().getFullYear() - 2008 }, (_, i) => 2009 + i)
@@ -19,18 +16,18 @@ function toDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
-function formatLabel(dateKey: string): string {
+function formatLabel(dateKey: string, locale: AppLocale): string {
   const [y, m, d] = dateKey.split("-").map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+  return new Date(y, m - 1, d).toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",
   })
 }
 
-function formatRangeLabel(range: DateRange): string {
-  if (range.since === range.until) return formatLabel(range.since)
-  return `${formatLabel(range.since)} – ${formatLabel(range.until)}`
+function formatRangeLabel(range: DateRange, locale: AppLocale): string {
+  if (range.since === range.until) return formatLabel(range.since, locale)
+  return `${formatLabel(range.since, locale)} – ${formatLabel(range.until, locale)}`
 }
 
 type DateFilterProps = {
@@ -39,6 +36,7 @@ type DateFilterProps = {
 }
 
 export function DateFilter({ selected, onSelect }: DateFilterProps) {
+  const { locale, t } = useLocale()
   const today = new Date()
   const [open, setOpen] = useState(false)
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -48,6 +46,14 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
   // before the user has picked an end date.
   const [pendingFrom, setPendingFrom] = useState<string | null>(null)
   const [hoverKey, setHoverKey] = useState<string | null>(null)
+  const weekdays = Array.from({ length: 7 }, (_, day) =>
+    new Intl.DateTimeFormat(locale, { weekday: "narrow" }).format(
+      new Date(2024, 0, 7 + day),
+    ),
+  )
+  const months = Array.from({ length: 12 }, (_, month) =>
+    new Intl.DateTimeFormat(locale, { month: "short" }).format(new Date(2024, month, 1)),
+  )
 
   const changeMonth = (delta: number) => {
     const next = new Date(viewYear, viewMonth + delta, 1)
@@ -93,12 +99,12 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
     >
       <PopoverTrigger className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
         <Calendar className="size-3.5" />
-        {selected ? formatRangeLabel(selected) : "All time"}
+        {selected ? formatRangeLabel(selected, locale) : t("allTime")}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-3">
         {pendingFrom && (
           <p className="mb-2 text-xs text-muted-foreground">
-            Since {formatLabel(pendingFrom)} — pick an end date
+            {t("sincePickEnd", { date: formatLabel(pendingFrom, locale) })}
           </p>
         )}
         <div className="mb-3 flex items-center justify-between">
@@ -108,7 +114,7 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
               onChange={(e) => setViewMonth(Number(e.target.value))}
               className="rounded-md border bg-transparent px-1.5 py-1 text-sm outline-none"
             >
-              {MONTHS.map((m, i) => (
+              {months.map((m, i) => (
                 <option key={m} value={i}>
                   {m}
                 </option>
@@ -131,7 +137,7 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
               type="button"
               onClick={() => changeMonth(-1)}
               className="rounded-md border p-1 hover:bg-accent"
-              aria-label="Previous month"
+              aria-label={t("previousMonth")}
             >
               <ChevronLeft className="size-3.5" />
             </button>
@@ -139,7 +145,7 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
               type="button"
               onClick={() => changeMonth(1)}
               className="rounded-md border p-1 hover:bg-accent"
-              aria-label="Next month"
+              aria-label={t("nextMonth")}
             >
               <ChevronRight className="size-3.5" />
             </button>
@@ -150,8 +156,8 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
           className="grid grid-cols-7 gap-y-1 text-center text-xs"
           onMouseLeave={() => setHoverKey(null)}
         >
-          {WEEKDAYS.map((d) => (
-            <span key={d} className="py-1 font-medium text-muted-foreground">
+          {weekdays.map((d, index) => (
+            <span key={`${d}-${index}`} className="py-1 font-medium text-muted-foreground">
               {d}
             </span>
           ))}
@@ -191,7 +197,7 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
             }}
             className="font-medium hover:underline"
           >
-            Clear
+            {t("clear")}
           </button>
           <button
             type="button"
@@ -204,7 +210,7 @@ export function DateFilter({ selected, onSelect }: DateFilterProps) {
             }}
             className="text-muted-foreground hover:underline"
           >
-            Today
+            {t("today")}
           </button>
         </div>
       </PopoverContent>

@@ -5,6 +5,8 @@ import { Link, useParams } from "react-router-dom"
 import { ListSkeleton } from "@/components/ListRowSkeleton"
 import { Button } from "@/components/ui/button"
 import { formatRelativeDate } from "@/lib/format-date"
+import { useLocale } from "@/lib/i18n"
+import type { AppLocale } from "@/lib/locale"
 import { DEFAULT_REPO } from "@/lib/repos"
 import { AuthorFilter } from "@/pages/code/AuthorFilter"
 import { BranchSwitcher } from "@/pages/code/BranchSwitcher"
@@ -15,10 +17,10 @@ import { useRepoCommitPages } from "@/pages/code/hooks/use-repo-commits"
 import type { CommitInfo } from "@/pages/code/hooks/use-repo-summary"
 import { useRepoSummary } from "@/pages/code/hooks/use-repo-summary"
 
-function groupByDay(commits: CommitInfo[]): [string, CommitInfo[]][] {
+function groupByDay(commits: CommitInfo[], locale: AppLocale): [string, CommitInfo[]][] {
   const groups = new Map<string, CommitInfo[]>()
   for (const commit of commits) {
-    const label = new Date(commit.date).toLocaleDateString(undefined, {
+    const label = new Date(commit.date).toLocaleDateString(locale, {
       month: "long",
       day: "numeric",
       year: "numeric",
@@ -31,6 +33,7 @@ function groupByDay(commits: CommitInfo[]): [string, CommitInfo[]][] {
 }
 
 export default function CommitsPage() {
+  const { locale, t } = useLocale()
   // "*" (not a named param) -- same reasoning as CodePage: non-default
   // branch refs are "origin/<name>", which contains a "/".
   const params = useParams()
@@ -53,7 +56,7 @@ export default function CommitsPage() {
   })
 
   const commits = useMemo(() => pages.flatMap((p) => p.data?.commits ?? []), [pages])
-  const groups = useMemo(() => groupByDay(commits), [commits])
+  const groups = useMemo(() => groupByDay(commits, locale), [commits, locale])
   const total = pages[0]?.data?.total ?? 0
   const isLoading = pages.some((p) => p.isLoading)
   const hasMore = commits.length < total
@@ -66,10 +69,10 @@ export default function CommitsPage() {
           className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft className="size-4" />
-          Code
+          {t("navCode")}
         </Link>
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">Commits</h1>
+          <h1 className="text-xl font-semibold">{t("commits")}</h1>
           <BranchSwitcher
             repoName={repoName}
             current={currentBranchName}
@@ -104,7 +107,7 @@ export default function CommitsPage() {
           <div key={label} className="mb-6">
             <h2 className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <GitCommitHorizontal className="size-4" />
-              Commits on {label}
+              {t("commitsOn", { date: label })}
             </h2>
             <div className="overflow-hidden rounded-md border">
               {dayCommits.map((commit, i) => (
@@ -118,14 +121,15 @@ export default function CommitsPage() {
                   >
                     <p className="truncate text-sm font-medium">{commit.message}</p>
                     <p className="text-xs text-muted-foreground no-underline">
-                      {commit.author} committed {formatRelativeDate(commit.date)}
+                      {commit.author}{" "}
+                      {t("committed", { date: formatRelativeDate(commit.date, locale) })}
                     </p>
                   </Link>
                   <button
                     type="button"
                     onClick={() => navigator.clipboard.writeText(commit.sha)}
                     className="flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-xs text-muted-foreground hover:bg-accent"
-                    title="Copy full SHA"
+                    title={t("copyFullSha")}
                   >
                     {commit.short_sha}
                     <Copy className="size-3" />
@@ -133,7 +137,7 @@ export default function CommitsPage() {
                   <Link
                     to={`/code/${repoName}/tree/${commit.sha}`}
                     className="flex shrink-0 items-center rounded-md border p-1.5 text-muted-foreground hover:bg-accent"
-                    title="Browse the repository at this point in the history"
+                    title={t("browseAtCommit")}
                   >
                     <Code className="size-3.5" />
                   </Link>
@@ -149,7 +153,7 @@ export default function CommitsPage() {
             disabled={isLoading}
             onClick={() => setPageCount((n) => n + 1)}
           >
-            {isLoading ? "Loading…" : "Load more commits"}
+            {isLoading ? t("loading") : t("loadMoreCommits")}
           </Button>
         )}
       </div>
