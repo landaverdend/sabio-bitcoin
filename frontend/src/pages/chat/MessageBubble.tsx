@@ -1,4 +1,6 @@
 import {
+  ChevronLeft,
+  ChevronRight,
   Code2,
   ExternalLink,
   GitPullRequest,
@@ -6,6 +8,7 @@ import {
   Loader2,
   MessageSquareQuote,
 } from "lucide-react"
+import { useState } from "react"
 
 import { Markdown } from "@/components/Markdown"
 import { channelLabel } from "@/lib/channels"
@@ -16,12 +19,35 @@ import { ChatAttachment } from "@/pages/chat/ChatAttachment"
 import { ContextChip } from "@/pages/chat/ContextChip"
 import type {
   ChatBlock,
+  ChatAttachment as ChatAttachmentValue,
   ChatMessage,
   CommunicationReference,
+  ContextItem,
   GitHubDiscussionReference,
   SourceReference,
   WebReference,
 } from "@/pages/chat/hooks/use-chat"
+
+const REFERENCES_PER_PAGE = 5
+
+type ReferenceBlock = Extract<
+  ChatBlock,
+  {
+    type:
+      | "source"
+      | "communication_source"
+      | "github_discussion_source"
+      | "web_source"
+  }
+>
+
+type UserReference =
+  | { key: string; type: "context"; item: ContextItem }
+  | {
+      key: string
+      type: "attachment"
+      attachment: Exclude<ChatAttachmentValue, { kind: "image" }>
+    }
 
 function ThinkingDots() {
   return (
@@ -34,6 +60,66 @@ function ThinkingDots() {
         />
       ))}
     </span>
+  )
+}
+
+function isReferenceBlock(block: ChatBlock): block is ReferenceBlock {
+  return (
+    block.type === "source" ||
+    block.type === "communication_source" ||
+    block.type === "github_discussion_source" ||
+    block.type === "web_source"
+  )
+}
+
+function paginationWindow(itemCount: number, requestedPage: number) {
+  const pageCount = Math.max(1, Math.ceil(itemCount / REFERENCES_PER_PAGE))
+  const page = Math.min(requestedPage, pageCount - 1)
+  const start = page * REFERENCES_PER_PAGE
+  const end = Math.min(start + REFERENCES_PER_PAGE, itemCount)
+  return { page, pageCount, start, end }
+}
+
+function ReferencePagination({
+  itemCount,
+  requestedPage,
+  onPageChange,
+}: {
+  itemCount: number
+  requestedPage: number
+  onPageChange: (page: number) => void
+}) {
+  const { t } = useLocale()
+  if (itemCount <= REFERENCES_PER_PAGE) return null
+
+  const { page, pageCount, start, end } = paginationWindow(itemCount, requestedPage)
+  return (
+    <nav
+      className="flex items-center justify-end gap-1.5 pt-0.5 text-xs text-muted-foreground"
+      aria-label={t("referencedEvidence")}
+    >
+      <span className="mr-1 tabular-nums">
+        {t("referencesRange", { start: start + 1, end, total: itemCount })}
+      </span>
+      <button
+        type="button"
+        onClick={() => onPageChange(page - 1)}
+        disabled={page === 0}
+        aria-label={t("previousReferences")}
+        className="rounded-md border p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+      >
+        <ChevronLeft className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onPageChange(page + 1)}
+        disabled={page === pageCount - 1}
+        aria-label={t("nextReferences")}
+        className="rounded-md border p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+      >
+        <ChevronRight className="size-3.5" />
+      </button>
+    </nav>
   )
 }
 
@@ -272,6 +358,164 @@ function GitHubDiscussionSourceChip({
   )
 }
 
+function UserMessageBubble({
+  message,
+}: {
+  message: Extract<ChatMessage, { role: "user" }>
+}) {
+  const [requestedPage, setRequestedPage] = useState(0)
+  const images = message.attachments?.filter((attachment) => attachment.kind === "image") ?? []
+  const entityAttachments =
+    message.attachments?.filter((attachment) => attachment.kind !== "image") ?? []
+  const references: UserReference[] = []
+
+  for (const item of message.context ?? []) {
+    references.push({ key: `context:${item.id}`, type: "context", item })
+  }
+  for (const attachment of entityAttachments) {
+    references.push({
+      key: `attachment:${attachment.id}`,
+      type: "attachment",
+      attachment,
+    })
+  }
+
+  const { start, end } = paginationWindow(references.length, requestedPage)
+  const visibleReferences = references.slice(start, end)
+
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      {images.length > 0 && (
+        <div className="flex max-w-xl flex-wrap justify-end gap-2">
+          {images.map((attachment) => (
+            <ChatAttachment key={attachment.id} attachment={attachment} />
+          ))}
+        </div>
+      )}
+      <p className="max-w-xl rounded-2xl bg-primary px-4 py-2.5 text-sm whitespace-pre-wrap text-primary-foreground">
+        {message.text}
+      </p>
+      {references.length > 0 && (
+        <div className="max-w-xl">
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {visibleReferences.map((reference) => {
+              if (reference.type === "context") {
+                return (
+                  <ContextChip
+                    key={reference.key}
+                    item={reference.item}
+                    tone="on-page"
+                  />
+                )
+              }
+              return (
+                <ChatAttachment
+                  key={reference.key}
+                  attachment={reference.attachment}
+                  compact
+                />
+              )
+            })}
+          </div>
+          <ReferencePagination
+            itemCount={references.length}
+            requestedPage={requestedPage}
+            onPageChange={setRequestedPage}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChatBlockView({
+  block,
+  onOpenSource,
+  onOpenCommunication,
+}: {
+  block: ChatBlock
+  onOpenSource?: (source: SourceReference) => void
+  onOpenCommunication?: (source: CommunicationReference) => void
+}) {
+  if (block.type === "text") {
+    return (
+      <Markdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+        {block.text}
+      </Markdown>
+    )
+  }
+  if (block.type === "source") {
+    return <SourceChip source={block.source} onOpen={onOpenSource} />
+  }
+  if (block.type === "communication_source") {
+    return (
+      <CommunicationSourceChip
+        source={block.source}
+        onOpen={onOpenCommunication}
+      />
+    )
+  }
+  if (block.type === "github_discussion_source") {
+    return <GitHubDiscussionSourceChip source={block.source} />
+  }
+  if (block.type === "web_source") {
+    return <WebSourceChip source={block.source} />
+  }
+  return <ToolChip block={block} />
+}
+
+function AssistantMessageBubble({
+  message,
+  onOpenSource,
+  onOpenCommunication,
+}: {
+  message: Extract<ChatMessage, { role: "assistant" }>
+  onOpenSource?: (source: SourceReference) => void
+  onOpenCommunication?: (source: CommunicationReference) => void
+}) {
+  const [requestedPage, setRequestedPage] = useState(0)
+  const contentBlocks: Array<{ block: ChatBlock; index: number }> = []
+  const referenceBlocks: Array<{ block: ReferenceBlock; index: number }> = []
+
+  message.blocks.forEach((block, index) => {
+    if (isReferenceBlock(block)) {
+      referenceBlocks.push({ block, index })
+    } else {
+      contentBlocks.push({ block, index })
+    }
+  })
+
+  const { start, end } = paginationWindow(referenceBlocks.length, requestedPage)
+  const visibleReferences = referenceBlocks.slice(start, end)
+
+  return (
+    <div className="max-w-2xl space-y-2">
+      {message.blocks.length === 0 && <ThinkingDots />}
+      {contentBlocks.map(({ block, index }) => (
+        <ChatBlockView
+          key={index}
+          block={block}
+          onOpenSource={onOpenSource}
+          onOpenCommunication={onOpenCommunication}
+        />
+      ))}
+      {visibleReferences.map(({ block, index }) => (
+        <ChatBlockView
+          key={index}
+          block={block}
+          onOpenSource={onOpenSource}
+          onOpenCommunication={onOpenCommunication}
+        />
+      ))}
+      <ReferencePagination
+        itemCount={referenceBlocks.length}
+        requestedPage={requestedPage}
+        onPageChange={setRequestedPage}
+      />
+    </div>
+  )
+}
+
 export function MessageBubble({
   message,
   onOpenSource,
@@ -282,67 +526,13 @@ export function MessageBubble({
   onOpenCommunication?: (source: CommunicationReference) => void
 }) {
   if (message.role === "user") {
-    const images = message.attachments?.filter((attachment) => attachment.kind === "image") ?? []
-    const references =
-      message.attachments?.filter((attachment) => attachment.kind !== "image") ?? []
-
-    return (
-      <div className="flex flex-col items-end gap-1.5">
-        {images.length > 0 && (
-          <div className="flex max-w-xl flex-wrap justify-end gap-2">
-            {images.map((attachment) => (
-              <ChatAttachment key={attachment.id} attachment={attachment} />
-            ))}
-          </div>
-        )}
-        <p className="max-w-xl rounded-2xl bg-primary px-4 py-2.5 text-sm whitespace-pre-wrap text-primary-foreground">
-          {message.text}
-        </p>
-        {((message.context && message.context.length > 0) || references.length > 0) && (
-          <div className="flex max-w-xl flex-wrap justify-end gap-1.5">
-            {message.context?.map((item) => (
-              <ContextChip key={item.id} item={item} tone="on-page" />
-            ))}
-            {references.map((attachment) => (
-              <ChatAttachment key={attachment.id} attachment={attachment} compact />
-            ))}
-          </div>
-        )}
-      </div>
-    )
+    return <UserMessageBubble message={message} />
   }
-
   return (
-    <div className="max-w-2xl space-y-2">
-      {message.blocks.length === 0 && <ThinkingDots />}
-      {message.blocks.map((block, i) => {
-        if (block.type === "text") {
-          return (
-            <Markdown key={i} className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-              {block.text}
-            </Markdown>
-          )
-        }
-        if (block.type === "source") {
-          return <SourceChip key={i} source={block.source} onOpen={onOpenSource} />
-        }
-        if (block.type === "communication_source") {
-          return (
-            <CommunicationSourceChip
-              key={i}
-              source={block.source}
-              onOpen={onOpenCommunication}
-            />
-          )
-        }
-        if (block.type === "github_discussion_source") {
-          return <GitHubDiscussionSourceChip key={i} source={block.source} />
-        }
-        if (block.type === "web_source") {
-          return <WebSourceChip key={i} source={block.source} />
-        }
-        return <ToolChip key={i} block={block} />
-      })}
-    </div>
+    <AssistantMessageBubble
+      message={message}
+      onOpenSource={onOpenSource}
+      onOpenCommunication={onOpenCommunication}
+    />
   )
 }

@@ -230,7 +230,7 @@ export default function ChatPage() {
       <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
         {messages.map((message, index) => (
           <MessageBubble
-            key={index}
+            key={`${sessionId}-${index}`}
             message={message}
             onOpenSource={openCodeSource}
             onOpenCommunication={openCommunicationSource}

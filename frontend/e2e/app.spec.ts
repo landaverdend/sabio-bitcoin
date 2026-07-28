@@ -175,6 +175,53 @@ test("exact PR discussion reads render as linked source cards", async ({
   expect(clientErrors).toEqual([])
 })
 
+test("chat evidence is paginated after five references", async ({ page }) => {
+  const clientErrors = monitorClientErrors(page)
+  await installMockApi(page)
+  const sources = Array.from({ length: 6 }, (_, index) => ({
+    type: "communication_source",
+    message_id: `message:${index + 1}`,
+    channel: "bitcoin-core-dev",
+    author: `author-${index + 1}`,
+    title: `Evidence ${index + 1}`,
+    posted_at: `2026-07-${String(index + 1).padStart(2, "0")}T12:00:00+00:00`,
+    excerpt: `Reference excerpt ${index + 1}`,
+    source_url: `https://gnusha.org/bitcoin-core-dev/2026-07-${String(index + 1).padStart(2, "0")}.log`,
+  }))
+
+  await page.route("**/chat/stream", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: sse(
+        ...sources,
+        { type: "text", author: "sabio_irc", text: "Six sources checked." },
+        { type: "done" },
+      ),
+    })
+  })
+
+  await page.goto("/chat")
+  await page.getByPlaceholder("Message Sabio…").fill("Show all six sources")
+  await page.getByRole("button", { name: "Send message" }).click()
+
+  await expect(page.getByText("Six sources checked.")).toBeVisible()
+  await expect(page.getByText("Reference excerpt 1", { exact: false })).toBeVisible()
+  await expect(page.getByText("Reference excerpt 5", { exact: false })).toBeVisible()
+  await expect(page.getByText("Reference excerpt 6", { exact: false })).toHaveCount(0)
+  await expect(page.getByText("1–5 of 6")).toBeVisible()
+
+  await page.getByRole("button", { name: "Next references" }).click()
+
+  await expect(page.getByText("Reference excerpt 1", { exact: false })).toHaveCount(0)
+  await expect(page.getByText("Reference excerpt 6", { exact: false })).toBeVisible()
+  await expect(page.getByText("6–6 of 6")).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Next references" }),
+  ).toBeDisabled()
+  expect(clientErrors).toEqual([])
+})
+
 test("image attachments are previewed and serialized into the chat request", async ({
   page,
 }) => {
