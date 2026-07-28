@@ -6,6 +6,7 @@ import { ListSkeleton } from "@/components/ListRowSkeleton"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { channelLabel } from "@/lib/channels"
 import { formatRelativeDate } from "@/lib/format-date"
 import { useLocale } from "@/lib/i18n"
@@ -54,7 +55,8 @@ export default function PersonDetailPage() {
   const commitsSettled = !hasGithubIdentity || !commitExistence.isLoading
 
   const [commitSearch, setCommitSearch] = useState("")
-  const commitQuery = commitSearch.trim() || undefined
+  const debouncedCommitSearch = useDebouncedValue(commitSearch)
+  const commitQuery = debouncedCommitSearch.trim() || undefined
   const [commitPageCount, setCommitPageCount] = useState(1)
   const commitPages = useRepoCommitPages(
     commitPageCount,
@@ -84,7 +86,8 @@ export default function PersonDetailPage() {
   const activeTab = tabs.some((t) => t.key === requestedTab) ? (requestedTab as string) : (tabs[0]?.key ?? "")
 
   const [messageSearch, setMessageSearch] = useState("")
-  const messageQuery = messageSearch.trim() || undefined
+  const debouncedMessageSearch = useDebouncedValue(messageSearch)
+  const messageQuery = debouncedMessageSearch.trim() || undefined
   const [messagePageCount, setMessagePageCount] = useState(1)
   // Zero pages (no fetch) while on the Commits tab -- only one channel's
   // messages are ever shown at a time, so there's nothing to fetch there.

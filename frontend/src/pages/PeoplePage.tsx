@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 
 import { ListSkeleton } from "@/components/ListRowSkeleton"
 import { Button } from "@/components/ui/button"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { useLocale } from "@/lib/i18n"
 import { PersonAvatar } from "@/pages/people/PersonAvatar"
 import type { PersonSummary } from "@/pages/people/hooks/use-people"
@@ -41,7 +42,8 @@ export default function PeoplePage() {
   const { locale, t } = useLocale()
   const [search, setSearch] = useState("")
   const [pageCount, setPageCount] = useState(1)
-  const q = search.trim() || undefined
+  const debouncedSearch = useDebouncedValue(search)
+  const q = debouncedSearch.trim() || undefined
 
   const pages = usePeoplePages(pageCount, q)
   const people = useMemo(() => pages.flatMap((p) => p.data?.people ?? []), [pages])

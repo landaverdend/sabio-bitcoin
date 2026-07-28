@@ -7,10 +7,11 @@ import {
   Search,
   UserRound,
 } from "lucide-react"
-import { useDeferredValue, useState } from "react"
+import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { useLocale } from "@/lib/i18n"
 import { REPOS } from "@/lib/repos"
 import type {
@@ -73,8 +74,8 @@ export function AttachmentMenu({
   const [open, setOpen] = useState(false)
   const [page, setPage] = useState<MenuPage>("main")
   const [search, setSearch] = useState("")
-  const deferredSearch = useDeferredValue(search.trim())
-  const peopleQuery = usePeople(1, deferredSearch || undefined, open && page === "people")
+  const debouncedSearch = useDebouncedValue(search.trim())
+  const peopleQuery = usePeople(1, debouncedSearch || undefined, open && page === "people")
 
   const close = () => {
     setOpen(false)
