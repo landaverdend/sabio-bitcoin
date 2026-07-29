@@ -114,6 +114,18 @@ def test_search_prs_builds_supported_github_qualifiers():
     )
 
 
+def test_code_search_client_disables_pygithubs_hidden_rate_limit_retry():
+    with (
+        patch.dict(github_tools.os.environ, {"GITHUB_TOKEN": "test-token"}),
+        patch.object(github_tools, "Github") as github,
+    ):
+        github_tools._get_search_client()
+
+    kwargs = github.call_args.kwargs
+    assert kwargs["retry"] == 0
+    assert kwargs["auth"].token == "test-token"
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [

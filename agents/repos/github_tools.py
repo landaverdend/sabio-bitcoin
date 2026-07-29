@@ -45,6 +45,22 @@ def _get_client() -> Github:
     return Github()
 
 
+def _get_search_client() -> Github:
+    """GitHub client for explicitly throttled search endpoints.
+
+    PyGithub's default retry policy sleeps until GitHub's search-rate window
+    resets after a 403. Code search has a much smaller quota than ordinary
+    REST reads, so that hidden sleep can consume an agent's entire timeout.
+    code_browser.search_code owns the queue, cache, and rate-limit response;
+    this client must therefore surface a 403 immediately instead of retrying
+    it internally.
+    """
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        return Github(auth=Auth.Token(token), retry=0)
+    return Github(retry=0)
+
+
 def _resolve_repo(repo_name: str):
     """Resolves a configured alias (REPOS) or, failing that, a raw "owner/repo"
     slug passed through as-is -- lets tools follow a PR onto its actual head
